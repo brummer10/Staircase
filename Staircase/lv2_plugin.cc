@@ -77,47 +77,141 @@ bool send_midi_cc(MidiMessenger *mm, uint8_t _cc, const uint8_t _pg,
 }
 #endif
 
-// draw the window
+static inline float clampf(float x, float lo, float hi) {
+    return (x < lo) ? lo : (x > hi) ? hi : x;
+}
+
+static float db_to_y(float db, float db_min, float db_max, int height) {
+    float norm = (db - db_min) / (db_max - db_min);
+    norm = clampf(norm, 0.0f, 1.0f);
+    return (1.0f - norm) * height;
+}
+
+static float freq_to_x(float freq, float f_min, float f_max, int width) {
+    const float x_pad = 3.0f;
+    if (freq < f_min) freq = f_min;
+    if (freq > f_max) freq = f_max;
+
+    float norm = log10f(freq / f_min) / log10f(f_max / f_min);
+    return  x_pad + norm * (width - 2.0f * x_pad);
+}
+
+static inline float display_tilt(float freq) {
+    if (freq >= 1000.0f)
+        return 0.0f;
+
+    float t = log10f(freq / 1000.0f);
+    return 20.0f * t;
+}
+
 static void draw_window(void *w_, void* user_data) {
     Widget_t *w = (Widget_t*)w_;
-    set_pattern(w,&w->color_scheme->selected,&w->color_scheme->normal,BACKGROUND_);
-    cairo_paint (w->crb);
-    set_pattern(w,&w->color_scheme->normal,&w->color_scheme->selected,BACKGROUND_);
-    cairo_rectangle (w->crb,4,4,w->width-8,w->height-8);
-    cairo_set_line_width(w->crb,4);
-    cairo_stroke(w->crb);
-
-#ifndef HIDE_NAME
-    cairo_text_extents_t extents;
-    use_text_color_scheme(w, get_color_state(w));
-    cairo_set_font_size (w->crb, w->app->big_font/w->scale.ascale);
-    cairo_text_extents(w->crb,w->label , &extents);
-    double tw = extents.width/2.0;
-#endif
-
-    widget_set_scale(w);
-    if (w->image) {
-        cairo_set_source_surface (w->crb, w->image, 0, 0);
-        cairo_paint (w->crb);
-    }
-    use_text_color_scheme(w, get_color_state(w));
-#ifdef USE_ATOM
     X11_UI* ui = (X11_UI*)w->parent_struct;
-    X11_UI_Private_t *ps = (X11_UI_Private_t*)ui->private_ptr;
-    if (strlen(ps->filename)) {
-        cairo_text_extents_t extents_f;
-        cairo_text_extents(w->crb, basename(ps->filename), &extents_f);
-        double twf = extents_f.width/2.0;
-        cairo_move_to (w->crb, max(5,(w->scale.init_width*0.5)-twf), w->scale.init_y+20 );
-        cairo_show_text(w->crb, basename(ps->filename));       
+    const float* mags = fft_analyzer_get_magnitudes(ui->ana);
+    int bins = fft_analyzer_get_bins(ui->ana);
+    float sample_rate =  ui->uiKnowSampleRate ? ui->uiSampleRate : 48000.0;
+    int fft_size = 2048;
+    cairo_t* cr = w->crb;
+
+    int width  = w->width;
+    int height = w->height;
+
+    const float f_min = 20.0f;
+    const float f_max = 20000.0f;
+
+    const float db_min = -75.0f;
+    const float db_max = 0.0f;
+
+    // Background
+    cairo_set_source_rgb(cr, 0.08, 0.08, 0.08);
+    cairo_rectangle(cr, 0, 0, width, height);
+    cairo_fill(cr);
+
+    // Grid: Frequencies
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.08);
+    cairo_set_line_width(cr, 1.0);
+
+    float freqs[] = {20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000};
+    int num_freqs = sizeof(freqs) / sizeof(freqs[0]);
+
+    for (int i = 0; i < num_freqs; ++i) {
+        float x = freq_to_x(freqs[i], f_min, f_max, width);
+        cairo_move_to(cr, x, 0);
+        cairo_line_to(cr, x, height);
     }
-#endif
-#ifndef HIDE_NAME
-    cairo_move_to (w->crb, (w->scale.init_width*0.5)-tw, w->scale.init_height-10 );
-    cairo_show_text(w->crb, w->label);
-#endif
-    widget_reset_scale(w);
-    cairo_new_path (w->crb);
+    cairo_stroke(cr);
+
+    // Grid: dB
+    float db_lines[] = {-60, -40, -24, -12, 0};
+    int num_db = sizeof(db_lines) / sizeof(db_lines[0]);
+
+    for (int i = 0; i < num_db; ++i) {
+        float y = db_to_y(db_lines[i], db_min, db_max, height);
+        cairo_move_to(cr, 0, y);
+        cairo_line_to(cr, width, y);
+    }
+    cairo_stroke(cr);
+
+    // Spectrum Line
+    cairo_set_source_rgb(cr, 0.2, 0.8, 0.3);
+    cairo_set_line_width(cr, 2.0);
+
+    int started = 0;
+
+    for (int i = 1; i < bins; ++i) {
+
+        float freq = (float)i * sample_rate / fft_size;
+
+        if (freq < f_min || freq > f_max)
+            continue;
+
+        float x = freq_to_x(freq, f_min, f_max, width);
+        float db = mags[i] + display_tilt(freq);
+        float y = db_to_y(db, db_min, db_max, height);
+
+        if (!started) {
+            float x0 = freq_to_x(f_min, f_min, f_max, width);
+            float db0 = mags[1] + display_tilt(f_min);
+            float y0 = db_to_y(db0, db_min, db_max, height);
+            cairo_move_to(cr, x0, y0);
+            started = 1;
+        } else {
+            cairo_line_to(cr, x, y);
+        }
+    }
+    cairo_stroke(cr);
+
+    // Filled Area
+    cairo_set_source_rgba(cr, 0.2, 0.8, 0.3, 0.15);
+
+    started = 0;
+
+    for (int i = 1; i < bins; ++i) {
+
+        float freq = (float)i * sample_rate / fft_size;
+
+        if (freq < f_min || freq > f_max)
+            continue;
+
+        float x = freq_to_x(freq, f_min, f_max, width);
+        float db = mags[i] + display_tilt(freq);
+        float y = db_to_y(db, db_min, db_max, height);
+
+        if (!started) {
+            float x0 = freq_to_x(f_min, f_min, f_max, width);
+            cairo_move_to(cr, x0, height);
+            cairo_line_to(cr, x0, y);
+            started = 1;
+        } else {
+            cairo_line_to(cr, x, y);
+        }
+    }
+
+    if (started) {
+        cairo_line_to(cr, width, height);
+        cairo_close_path(cr);
+        cairo_fill(cr);
+    }
 }
 
 // if controller value changed send notify to host
@@ -133,6 +227,7 @@ static void value_changed(void *w_, void* user_data) {
 Widget_t* add_lv2_knob(Widget_t *w, Widget_t *p, PortIndex index, const char * label,
                                 X11_UI* ui, int x, int y, int width, int height) {
     w = add_knob(p, label, x, y, width, height);
+    w->flags = USE_TRANSPARENCY | FAST_REDRAW;
     w->parent_struct = ui;
     w->data = index;
     w->func.value_changed_callback = value_changed;
@@ -191,6 +286,7 @@ Widget_t* add_lv2_hslider(Widget_t *w, Widget_t *p, PortIndex index, const char 
 Widget_t* add_lv2_toggle_button(Widget_t *w, Widget_t *p, PortIndex index, const char * label,
                                 X11_UI* ui, int x, int y, int width, int height) {
     w = add_toggle_button(p, label, x, y, width, height);
+    w->flags = USE_TRANSPARENCY | FAST_REDRAW;
     w->parent_struct = ui;
     w->data = index;
     w->func.value_changed_callback = value_changed;
@@ -200,6 +296,7 @@ Widget_t* add_lv2_toggle_button(Widget_t *w, Widget_t *p, PortIndex index, const
 Widget_t* add_lv2_image_toggle(Widget_t *w, Widget_t *p, PortIndex index, const char * label,
                                 X11_UI* ui, int x, int y, int width, int height) {
     w = add_switch_image_button(p, label, x, y, width, height);
+    w->flags = USE_TRANSPARENCY | FAST_REDRAW;
     w->parent_struct = ui;
     w->data = index;
     w->func.value_changed_callback = value_changed;
@@ -209,6 +306,7 @@ Widget_t* add_lv2_image_toggle(Widget_t *w, Widget_t *p, PortIndex index, const 
 Widget_t* add_lv2_button(Widget_t *w, Widget_t *p, PortIndex index, const char * label,
                                 X11_UI* ui, int x, int y, int width, int height) {
     w = add_button(p, label, x, y, width, height);
+    w->flags = USE_TRANSPARENCY | FAST_REDRAW;
     w->parent_struct = ui;
     w->data = index;
     w->func.value_changed_callback = value_changed;
@@ -218,6 +316,7 @@ Widget_t* add_lv2_button(Widget_t *w, Widget_t *p, PortIndex index, const char *
 Widget_t* add_lv2_image_button(Widget_t *w, Widget_t *p, PortIndex index, const char * label,
                                 X11_UI* ui, int x, int y, int width, int height) {
     w = add_image_button(p, label, x, y, width, height);
+    w->flags = USE_TRANSPARENCY | FAST_REDRAW;
     w->parent_struct = ui;
     w->data = index;
     w->func.value_changed_callback = value_changed;
@@ -352,6 +451,7 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
     ui->parentXwindow = 0;
     ui->private_ptr = NULL;
     ui->need_resize = 1;
+    LV2_Options_Option *opts = NULL;
 
     int i = 0;
     for(;i<CONTROLS;i++)
@@ -366,11 +466,25 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
             ui->parentXwindow = features[i]->data;
         } else if (!strcmp(features[i]->URI, LV2_UI__resize)) {
             ui->resize = (LV2UI_Resize*)features[i]->data;
+        } else if(!strcmp(features[i]->URI, LV2_OPTIONS__options)) {
+            opts = (LV2_Options_Option*)features[i]->data;
         } else if (!strcmp(features[i]->URI, LV2_URID_URI "#map")) {
             ui->map = (LV2_URID_Map*)features[i]->data;
         }
     }
-
+    if (opts != NULL) {
+        const LV2_URID atom_Float = ui->map->map(ui->map->handle, LV2_ATOM__Float);
+        const LV2_URID ui_sampleRate = ui->map->map(ui->map->handle, LV2_PARAMETERS__sampleRate);
+        for (const LV2_Options_Option* o = opts; o->key; ++o) {
+            if (o->context == LV2_OPTIONS_INSTANCE &&
+              o->key == ui_sampleRate && o->type == atom_Float) {
+                ui->uiKnowSampleRate = true;
+                ui->uiSampleRate = *(float*)o->value;
+                //fprintf(stderr, "SampleRate = %iHz\n",(int)*(float*)o->value);
+            }
+        }
+    }
+ 
     if (ui->parentXwindow == NULL)  {
         fprintf(stderr, "ERROR: Failed to open parentXwindow for %s\n", plugin_uri);
         free(ui);
@@ -385,6 +499,8 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
     ui->midiatom.size = 3;
     messenger_init(&ui->mm);
 #endif
+    map_osclv2_uris(ui->map, &ui->uris);
+    lv2_atom_forge_init(&ui->forge, ui->map);
 
     // init Xputty
     main_init(&ui->main);

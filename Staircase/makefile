@@ -28,7 +28,7 @@
 	RESOURCEHEADER := xresources.h
 ifeq ($(TARGET), Linux)
 	GUI_LDFLAGS += -I$(HEADER_DIR) -Wl,-Bstatic -L. $(UI_LIB) \
-	-Wl,-Bdynamic `pkg-config --cflags --libs cairo x11` 
+	-Wl,-Bdynamic `pkg-config --cflags --libs cairo x11 fftw3f` 
 	LDFLAGS += -fvisibility=hidden -shared -lm -fPIC -pthread -lpthread\
 	-Wl,-z,noexecstack -Wl,--no-undefined -Wl,--gc-sections
 	CXXFLAGS += -fPIC -DPIC -O2 -Wall -funroll-loops \

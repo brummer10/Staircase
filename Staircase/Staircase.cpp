@@ -6,6 +6,17 @@
 #include <unistd.h>
 
 #include <lv2/core/lv2.h>
+#include <lv2/state/state.h>
+#include <lv2/worker/worker.h>
+#include <lv2/atom/atom.h>
+#include <lv2/options/options.h>
+
+#include <lv2/atom/util.h>
+#include <lv2/atom/forge.h>
+#include <lv2/midi/midi.h>
+#include <lv2/urid/urid.h>
+#include <lv2/patch/patch.h>
+
 #include "Staircase.h"
 #include "StreamingResampler.h"
 
@@ -18,6 +29,22 @@ using std::max;
 
 typedef int PortIndex;
 
+typedef struct {
+    LV2_URID atom_Object;
+    LV2_URID atom_Float;
+    LV2_URID atom_Vector;
+    LV2_URID atom_URID;
+    LV2_URID atom_eventTransfer;
+} URIs;
+
+static inline void map_osclv2_uris(LV2_URID_Map* map, URIs* uris) {
+    uris->atom_Object             = map->map(map->handle, LV2_ATOM__Object);
+    uris->atom_Float              = map->map(map->handle, LV2_ATOM__Float);
+    uris->atom_Vector             = map->map(map->handle, LV2_ATOM__Vector);
+    uris->atom_URID               = map->map(map->handle, LV2_ATOM__URID);
+    uris->atom_eventTransfer      = map->map(map->handle, LV2_ATOM__eventTransfer);
+}
+
 ////////////////////////////// PLUG-IN CLASS ///////////////////////////
 
 namespace staircase {
@@ -28,6 +55,14 @@ private:
     LM_EII12 stair;
     StreamingResampler resUp;
     StreamingResampler resDown;
+    const LV2_Atom_Sequence* control;
+    LV2_Atom_Sequence* notify;
+    LV2_URID_Map* map;
+
+    LV2_Atom_Forge forge;
+    LV2_Atom_Sequence* notify_port;
+    LV2_Atom_Forge_Frame notify_frame;
+    URIs uris;
     float* input0;
     float* output0;
     float bypass_;
@@ -114,6 +149,9 @@ void Xstaircase::connect_(uint32_t port,void* data)
         case 5:
             stair.cutoff = static_cast<float*>(data);
             break;
+        case 6:
+            notify = (LV2_Atom_Sequence*)data;
+            break;
         default:
             break;
     }
@@ -137,6 +175,11 @@ void Xstaircase::deactivate_f()
 void Xstaircase::run_dsp_(uint32_t n_samples)
 {
     if(n_samples<1) return;
+    URIs* uris = &this->uris;
+    const uint32_t notify_capacity = this->notify->atom.size;
+    lv2_atom_forge_set_buffer(&forge, (uint8_t*)notify, notify_capacity);
+    lv2_atom_forge_sequence_head(&forge, &notify_frame, 0);
+    if (notify_capacity<n_samples) return;
 
 
     // do inplace processing on default
@@ -205,6 +248,13 @@ void Xstaircase::run_dsp_(uint32_t n_samples)
         }
     }
 
+    LV2_Atom_Forge_Frame frame;
+    lv2_atom_forge_frame_time(&this->forge, 0);
+    lv2_atom_forge_object(&this->forge, &frame, 1, uris->atom_Float);
+    lv2_atom_forge_property_head(&this->forge, uris->atom_Vector,0);
+    lv2_atom_forge_vector(&this->forge, sizeof(float), uris->atom_Float, n_samples, (void*)output0);
+    lv2_atom_forge_pop(&this->forge, &frame);
+
 }
 
 void Xstaircase::connect_all__ports(uint32_t port, void* data)
@@ -220,11 +270,26 @@ Xstaircase::instantiate(const LV2_Descriptor* descriptor,
                             double rate, const char* bundle_path,
                             const LV2_Feature* const* features)
 {
+    LV2_URID_Map* map = NULL;
+    for (int i = 0; features[i]; ++i) {
+        if (!strcmp(features[i]->URI, LV2_URID__map)) {
+            map = (LV2_URID_Map*)features[i]->data;
+        }
+    }
+    if (!map) {
+        return NULL;
+    }
     // init the plug-in class
     Xstaircase *self = new Xstaircase();
     if (!self) {
         return NULL;
     }
+
+    map_osclv2_uris(map, &self->uris);
+    lv2_atom_forge_init(&self->forge, map);
+
+    self->map = map;
+
     self->init_dsp_((uint32_t)rate);
     return (LV2_Handle)self;
 }

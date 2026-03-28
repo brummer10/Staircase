@@ -25,13 +25,15 @@
 #include <lv2/worker/worker.h>
 #include <lv2/atom/atom.h>
 #include <lv2/options/options.h>
-#if defined USE_ATOM || defined USE_MIDI
+
 #include <lv2/atom/util.h>
 #include <lv2/atom/forge.h>
 #include <lv2/midi/midi.h>
 #include <lv2/urid/urid.h>
 #include <lv2/patch/patch.h>
-#endif
+#include <lv2/parameters/parameters.h>
+
+#include <fftw3.h>
 
 // xwidgets.h includes xputty.h and all defined widgets from Xputty
 #include "xwidgets.h"
@@ -70,6 +72,50 @@ typedef struct {
 } MidiMessenger;
 #endif
 
+typedef struct {
+    int N;
+    int bins;
+    float sample_rate;
+    float* in;
+    float* window;
+    float* mags;
+    fftwf_complex* out;
+    fftwf_plan plan;
+    float norm_factor;
+    float* fifo;
+    int fifo_pos;
+    int hop_size;
+    int samples_since_last_fft;
+    float* smooth;
+    float attack;
+    float release;
+    void *private_ptr;
+} FFTAnalyzer;
+
+FFTAnalyzer* fft_analyzer_create(int fft_size, float sample_rate);
+void fft_analyzer_destroy(FFTAnalyzer* a);
+void fft_analyzer_process(FFTAnalyzer* a, const float* input, int n_elem);
+const float* fft_analyzer_get_magnitudes(FFTAnalyzer* a);
+int fft_analyzer_get_bins(FFTAnalyzer* a);
+
+
+typedef struct {
+    LV2_URID atom_Object;
+    LV2_URID atom_Float;
+    LV2_URID atom_Vector;
+    LV2_URID atom_URID;
+    LV2_URID atom_eventTransfer;
+} URIs;
+
+static inline void map_osclv2_uris(LV2_URID_Map* map, URIs* uris) {
+    uris->atom_Object             = map->map(map->handle, LV2_ATOM__Object);
+    uris->atom_Float              = map->map(map->handle, LV2_ATOM__Float);
+    uris->atom_Vector             = map->map(map->handle, LV2_ATOM__Vector);
+    uris->atom_URID               = map->map(map->handle, LV2_ATOM__URID);
+    uris->atom_eventTransfer      = map->map(map->handle, LV2_ATOM__eventTransfer);
+}
+
+
 // main window struct
 typedef struct {
 #ifdef USE_MIDI
@@ -87,10 +133,15 @@ typedef struct {
     Widget_t *widget[CONTROLS];
     Widget_t *elem[GUI_ELEMENTS];
     Widget_t *tab_elem[TAB_ELEMENTS];
+    URIs uris;
+    FFTAnalyzer *ana;
+    bool uiKnowSampleRate;
+    float uiSampleRate;
     void *private_ptr;
     int need_resize;
     LV2_URID_Map* map;
     void *controller;
+    LV2_Atom_Forge forge;
     LV2UI_Write_Function write_function;
     LV2UI_Resize* resize;
 } X11_UI;
