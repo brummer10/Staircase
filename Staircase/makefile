@@ -45,7 +45,7 @@ else ifeq ($(TARGET), Windows)
 	-fdata-sections -Wl,--gc-sections -Wl,--exclude-libs,ALL $(SSE_CFLAGS)
 	LDFLAGS += -I. -shared -lm $(PAWPAW_LFLAGS)
 	GUI_LDFLAGS += -I$(HEADER_DIR) -static-libgcc -static-libstdc++ \
-	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs cairo ` \
+	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs cairo fftw3f` \
 	-L. $(LIB_DIR)libxputty.$(STATIC_LIB_EXT) -shared  -lm $(PAWPAW_LFLAGS)
 	TTLUPDATE = sed -i '/lv2:binary/ s/\.so/\.dll/ ' ../bin/$(BUNDLE)/manifest.ttl
 	TTLUPDATEGUI = sed -i '/a guiext:X11UI/ s/X11UI/WindowsUI/ ; /guiext:binary/ s/\.so/\.dll/ ' ../bin/$(BUNDLE)/$(NAME).ttl
