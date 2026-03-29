@@ -33,7 +33,6 @@
 #include <lv2/patch/patch.h>
 #include <lv2/parameters/parameters.h>
 
-#include <fftw3.h>
 
 // xwidgets.h includes xputty.h and all defined widgets from Xputty
 #include "xwidgets.h"
@@ -48,56 +47,7 @@
 extern "C" {
 #endif
 
-typedef struct {
-    int stride;
-    int width;
-    int height;
-    unsigned char* data;
-} CairoImageData;
-
 typedef int PortIndex;
-
-#ifdef USE_MIDI
-enum {
-    _FULL          = 1<<0,
-    _EMPTY         = 1<<1,
-};
-
-typedef struct {
-    int send_cc[25];
-    uint8_t cc_num[25];
-    uint8_t pg_num[25];
-    uint8_t bg_num[25];
-    uint8_t me_num[25];
-} MidiMessenger;
-#endif
-
-typedef struct {
-    int N;
-    int bins;
-    float sample_rate;
-    float* in;
-    float* window;
-    float* mags;
-    fftwf_complex* out;
-    fftwf_plan plan;
-    float norm_factor;
-    float* fifo;
-    int fifo_pos;
-    int hop_size;
-    int samples_since_last_fft;
-    float* smooth;
-    float attack;
-    float release;
-    void *private_ptr;
-} FFTAnalyzer;
-
-FFTAnalyzer* fft_analyzer_create(int fft_size, float sample_rate);
-void fft_analyzer_destroy(FFTAnalyzer* a);
-void fft_analyzer_process(FFTAnalyzer* a, const float* input, int n_elem);
-const float* fft_analyzer_get_magnitudes(FFTAnalyzer* a);
-int fft_analyzer_get_bins(FFTAnalyzer* a);
-
 
 typedef struct {
     LV2_URID atom_Object;
@@ -118,15 +68,6 @@ static inline void map_osclv2_uris(LV2_URID_Map* map, URIs* uris) {
 
 // main window struct
 typedef struct {
-#ifdef USE_MIDI
-    LV2_URID midi_MidiEvent;
-    LV2_URID atom_eventTransfer;
-
-    LV2_Atom midiatom; 
-    LV2_Atom_Forge forge;
-    MidiMessenger mm;
-    int midi_port;
-#endif
     void *parentXwindow;
     Xputty main;
     Widget_t *win;
@@ -134,9 +75,10 @@ typedef struct {
     Widget_t *elem[GUI_ELEMENTS];
     Widget_t *tab_elem[TAB_ELEMENTS];
     URIs uris;
-    FFTAnalyzer *ana;
     bool uiKnowSampleRate;
     float uiSampleRate;
+    float* abuffer;
+    int asize;
     void *private_ptr;
     int need_resize;
     LV2_URID_Map* map;
@@ -145,19 +87,6 @@ typedef struct {
     LV2UI_Write_Function write_function;
     LV2UI_Resize* resize;
 } X11_UI;
-
-#ifdef USE_MIDI
-void messenger_init(MidiMessenger *mm);
-
-bool send_midi_cc(MidiMessenger *mm, uint8_t _cc, const uint8_t _pg,
-                            const uint8_t _bgn, const uint8_t _num);
-
-int next(MidiMessenger *mm, int i);
-
-void fill(MidiMessenger *mm, unsigned char *midi_send, const int i);
-
-void set_midi_port(X11_UI *ui, int p) {ui->midi_port = p;}
-#endif
 
 // controller value changed, forward value to host when needed
 void plugin_value_changed(X11_UI *ui, Widget_t *w, PortIndex index);

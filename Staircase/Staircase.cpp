@@ -19,6 +19,8 @@
 
 #include "Staircase.h"
 #include "StreamingResampler.h"
+#include "ParallelThread.h"
+#include "FFTAnalyzer.h"
 
 ///////////////////////// MACRO SUPPORT ////////////////////////////////
 
@@ -55,6 +57,9 @@ private:
     LM_EII12 stair;
     StreamingResampler resUp;
     StreamingResampler resDown;
+    ParallelThread     xrworker;
+    FFTAnalyzer        ana;
+    
     const LV2_Atom_Sequence* control;
     LV2_Atom_Sequence* notify;
     LV2_URID_Map* map;
@@ -65,7 +70,9 @@ private:
     URIs uris;
     float* input0;
     float* output0;
+    float* abuffer;
     float bypass_;
+    int frames;
     // bypass ramping
     bool needs_ramp_down;
     bool needs_ramp_up;
@@ -83,6 +90,7 @@ private:
     inline void activate_f();
     inline void clean_up();
     inline void deactivate_f();
+    void analyse();
 public:
     // LV2 Descriptor
     static const LV2_Descriptor descriptor;
@@ -101,29 +109,43 @@ public:
 
 // constructor
 Xstaircase::Xstaircase() :
-
+    xrworker(),
     input0(NULL),
     output0(NULL),
+    abuffer(NULL),
     bypass_(2),
     needs_ramp_down(false),
     needs_ramp_up(false),
-    bypassed(false) {};
+    bypassed(false) {
+        xrworker.start();
+    };
 
 // destructor
-Xstaircase::~Xstaircase() {};
+Xstaircase::~Xstaircase() {
+    xrworker.stop();
+    delete[] abuffer;
+};
 
 ///////////////////////// PRIVATE CLASS  FUNCTIONS /////////////////////
 
 void Xstaircase::init_dsp_(uint32_t rate)
 {
+    abuffer = new float[8192];
+    memset(abuffer, 0, 8192 * sizeof(float));
+    ana.init(2048, (float)rate);
     // set values for internal ramping
     ramp_down_step = 32 * (256 * rate) / 48000; 
     ramp_up_step = ramp_down_step;
     ramp_down = ramp_down_step;
     ramp_up = 0.0;
+    frames = 0;
     stair.setSampleRate(2*rate);
     resUp.setup(1, 8192, rate, 2*rate);
     resDown.setup(1, 8192, 2*rate, rate);
+
+    xrworker.setThreadName("Worker");
+    xrworker.set<Xstaircase, &Xstaircase::analyse>(this);
+    xrworker.runProcess();
 }
 
 // connect the Ports used by the plug-in class
@@ -170,6 +192,11 @@ void Xstaircase::clean_up()
 void Xstaircase::deactivate_f()
 {
     // delete the internal DSP mem
+}
+
+void Xstaircase::analyse() {
+    if (!frames) return;
+    ana.processBlock(abuffer, frames);
 }
 
 void Xstaircase::run_dsp_(uint32_t n_samples)
@@ -223,7 +250,7 @@ void Xstaircase::run_dsp_(uint32_t n_samples)
         }
         if (ramp_down <= 0.0) {
             // when ramped down, clear buffer from dsp
-                        needs_ramp_down = false;
+            needs_ramp_down = false;
             bypassed = true;
             ramp_down = ramp_down_step;
             ramp_up = 0.0;
@@ -247,14 +274,19 @@ void Xstaircase::run_dsp_(uint32_t n_samples)
             ramp_down = ramp_up;
         }
     }
+    memcpy(abuffer, output0, n_samples * sizeof(float));
+    frames = n_samples;
+    xrworker.runProcess();
 
-    LV2_Atom_Forge_Frame frame;
-    lv2_atom_forge_frame_time(&this->forge, 0);
-    lv2_atom_forge_object(&this->forge, &frame, 1, uris->atom_Float);
-    lv2_atom_forge_property_head(&this->forge, uris->atom_Vector,0);
-    lv2_atom_forge_vector(&this->forge, sizeof(float), uris->atom_Float, n_samples, (void*)output0);
-    lv2_atom_forge_pop(&this->forge, &frame);
-
+    if (ana.hasNewData()) {
+        LV2_Atom_Forge_Frame frame;
+        lv2_atom_forge_frame_time(&this->forge, 0);
+        lv2_atom_forge_object(&this->forge, &frame, 1, uris->atom_Float);
+        lv2_atom_forge_property_head(&this->forge, uris->atom_Vector,0);
+        lv2_atom_forge_vector(&this->forge, sizeof(float), uris->atom_Float, ana.getBins(), (void*)ana.getMagnitudes());
+        lv2_atom_forge_pop(&this->forge, &frame);
+        ana.clearFlag();
+    }
 }
 
 void Xstaircase::connect_all__ports(uint32_t port, void* data)

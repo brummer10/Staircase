@@ -27,56 +27,6 @@
 -----------------------------------------------------------------------
 ----------------------------------------------------------------------*/
 
-#ifdef USE_MIDI
-void messenger_init(MidiMessenger *mm) {
-    int i = 0;
-    for (; i < 25; i++) {
-        mm->send_cc[i] &= ~_FULL;
-        mm->send_cc[i] |= _EMPTY;
-    }
-}
-
-int next(MidiMessenger *mm, int i) {
-    while (++i < 25) {
-        if (mm->send_cc[i] & _FULL) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-void fill(MidiMessenger *mm, uint8_t *midi_send, int i) {
-    if (mm->me_num[i] == 3) {
-        midi_send[2] =  mm->bg_num[i];
-    }
-    midi_send[1] = mm->pg_num[i];    // program value
-    midi_send[0] = mm->cc_num[i];    // controller+ channel
-    mm->send_cc[i] &= ~_FULL;
-    mm->send_cc[i] |= _EMPTY;
-}
-
-bool send_midi_cc(MidiMessenger *mm, uint8_t _cc, const uint8_t _pg,
-                            const uint8_t _bgn, const uint8_t _num) {
-
-    for(int i = 0; i < 25; i++) {
-        if (mm->send_cc[i] & _FULL) {
-            if (mm->cc_num[i] == _cc && mm->pg_num[i] == _pg &&
-                mm->bg_num[i] == _bgn && mm->me_num[i] == _num)
-                return true;
-        } else if (mm->send_cc[i] & _EMPTY) {
-            mm->cc_num[i] = _cc;
-            mm->pg_num[i] = _pg;
-            mm->bg_num[i] = _bgn;
-            mm->me_num[i] = _num;
-            mm->send_cc[i] &= ~_EMPTY;
-            mm->send_cc[i] |=_FULL;
-            return true;
-        }
-    }
-    return false;
-}
-#endif
-
 static inline float clampf(float x, float lo, float hi) {
     return (x < lo) ? lo : (x > hi) ? hi : x;
 }
@@ -104,13 +54,19 @@ static inline float display_tilt(float freq) {
     return 20.0f * t;
 }
 
+static void draw_text(cairo_t* cr, float x, float y, const char* txt)
+{
+    cairo_move_to(cr, max(5,x), y);
+    cairo_show_text(cr, txt);
+}
+
 static void draw_window(void *w_, void* user_data) {
     Widget_t *w = (Widget_t*)w_;
     X11_UI* ui = (X11_UI*)w->parent_struct;
-    const float* mags = fft_analyzer_get_magnitudes(ui->ana);
-    int bins = fft_analyzer_get_bins(ui->ana);
+    const float* mags = ui->abuffer;
+    int bins = ui->asize;
     float sample_rate =  ui->uiKnowSampleRate ? ui->uiSampleRate : 48000.0;
-    int fft_size = 2048;
+    int fft_size = bins * 2; // 2048;
     cairo_t* cr = w->crb;
 
     int width  = w->width;
@@ -153,9 +109,7 @@ static void draw_window(void *w_, void* user_data) {
     cairo_stroke(cr);
 
     // Spectrum Line
-    cairo_set_source_rgb(cr, 0.2, 0.8, 0.3);
-    cairo_set_line_width(cr, 2.0);
-
+    cairo_set_source_rgba(cr,  0.2, 0.8, 0.3, 0.85);
     int started = 0;
 
     for (int i = 1; i < bins; ++i) {
@@ -179,38 +133,37 @@ static void draw_window(void *w_, void* user_data) {
             cairo_line_to(cr, x, y);
         }
     }
-    cairo_stroke(cr);
+    cairo_stroke_preserve(cr);
 
-    // Filled Area
-    cairo_set_source_rgba(cr, 0.2, 0.8, 0.3, 0.15);
-
-    started = 0;
-
-    for (int i = 1; i < bins; ++i) {
-
-        float freq = (float)i * sample_rate / fft_size;
-
-        if (freq < f_min || freq > f_max)
-            continue;
-
-        float x = freq_to_x(freq, f_min, f_max, width);
-        float db = mags[i] + display_tilt(freq);
-        float y = db_to_y(db, db_min, db_max, height);
-
-        if (!started) {
-            float x0 = freq_to_x(f_min, f_min, f_max, width);
-            cairo_move_to(cr, x0, height);
-            cairo_line_to(cr, x0, y);
-            started = 1;
-        } else {
-            cairo_line_to(cr, x, y);
-        }
-    }
-
+    // Spectrum fill
     if (started) {
+        cairo_set_source_rgba(cr,  0.2, 0.8, 0.3, 0.15);
         cairo_line_to(cr, width, height);
+        cairo_line_to(cr, 3, height);
         cairo_close_path(cr);
         cairo_fill(cr);
+    }
+
+    // dB Labels
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.6);
+    cairo_set_font_size(cr, 10);
+    for (int i = 0; i < num_db; ++i) {
+        float y = db_to_y(db_lines[i], db_min, db_max, height);
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.0f", db_lines[i]);
+        draw_text(cr, 4, y - 2, buf);
+    }
+
+    // Frequency Labels
+    for (int i = 0; i < num_freqs; ++i) {
+        float x = freq_to_x(freqs[i], f_min, f_max, width);
+        char buf[16];
+        if (freqs[i] >= 1000.0f) {
+            snprintf(buf, sizeof(buf), "%.0fk", freqs[i] / 1000.0f);
+        } else {
+            snprintf(buf, sizeof(buf), "%.0f", freqs[i]);
+        }
+        draw_text(cr, min(width-20, x - 10), height - 4, buf);
     }
 }
 
@@ -451,6 +404,9 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
     ui->parentXwindow = 0;
     ui->private_ptr = NULL;
     ui->need_resize = 1;
+    ui->abuffer = (float*) calloc (8192, sizeof(float));
+    ui->asize = 0;
+    ui->map = NULL;
     LV2_Options_Option *opts = NULL;
 
     int i = 0;
@@ -472,7 +428,7 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
             ui->map = (LV2_URID_Map*)features[i]->data;
         }
     }
-    if (opts != NULL) {
+    if (opts != NULL && ui->map != NULL) {
         const LV2_URID atom_Float = ui->map->map(ui->map->handle, LV2_ATOM__Float);
         const LV2_URID ui_sampleRate = ui->map->map(ui->map->handle, LV2_PARAMETERS__sampleRate);
         for (const LV2_Options_Option* o = opts; o->key; ++o) {
@@ -490,15 +446,6 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
         free(ui);
         return NULL;
     }
-
-#ifdef USE_MIDI
-    lv2_atom_forge_init(&ui->forge,ui->map);
-    ui->atom_eventTransfer  = ui->map->map(ui->map->handle, LV2_ATOM__eventTransfer);
-    ui->midi_MidiEvent = ui->map->map(ui->map->handle, LV2_MIDI__MidiEvent);
-    ui->midiatom.type = ui->midi_MidiEvent;
-    ui->midiatom.size = 3;
-    messenger_init(&ui->mm);
-#endif
     map_osclv2_uris(ui->map, &ui->uris);
     lv2_atom_forge_init(&ui->forge, ui->map);
 
@@ -510,9 +457,6 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
     // create the toplevel Window on the parentXwindow provided by the host
     ui->win = create_window(&ui->main, (Window)ui->parentXwindow, 0, 0, w, h);
     ui->win->parent_struct = ui;
-#ifdef __linux__
-    ui->win->flags |= DONT_PROPAGATE;
-#endif
     ui->win->label = plugin_set_name();
     // connect the expose func
     ui->win->func.expose_callback = draw_window;
@@ -540,6 +484,7 @@ static void cleanup(LV2UI_Handle handle) {
     plugin_cleanup(ui);
     // Xputty free all memory used
     main_quit(&ui->main);
+    free(ui->abuffer);
     free(ui->private_ptr);
     free(ui);
 }
@@ -576,28 +521,6 @@ static void port_event(LV2UI_Handle handle, uint32_t port_index,
    plugin_port_event(handle, port_index, buffer_size, format, buffer);
 }
 
-#ifdef USE_MIDI
-// send midi data to the midi output port 
-void send_midi_data(X11_UI* ui, uint8_t controller,
-                             uint8_t note, uint8_t velocity) {
-
-    uint8_t obj_buf[OBJ_BUF_SIZE];
-    uint8_t vec[3];
-    vec[0] = controller;
-    vec[1] = note;
-    vec[2] = velocity; 
-    lv2_atom_forge_set_buffer(&ui->forge, obj_buf, OBJ_BUF_SIZE);
-
-    lv2_atom_forge_frame_time(&ui->forge,0);
-    LV2_Atom* msg = (LV2_Atom*)lv2_atom_forge_raw(&ui->forge,&ui->midiatom,sizeof(LV2_Atom));
-    lv2_atom_forge_raw(&ui->forge,vec, sizeof(vec));
-    lv2_atom_forge_pad(&ui->forge,sizeof(vec)+sizeof(LV2_Atom));
-
-    ui->write_function(ui->controller, ui->midi_port, lv2_atom_total_size(msg),
-                       ui->atom_eventTransfer, msg);
-}
-#endif
-
 // LV2 idle interface to host
 static int ui_idle(LV2UI_Handle handle) {
     X11_UI* ui = (X11_UI*)handle;
@@ -612,15 +535,6 @@ static int ui_idle(LV2UI_Handle handle) {
     }
     // Xputty event loop setup to run one cycle when called
     run_embedded(&ui->main);
-#ifdef USE_MIDI
-    int i = next(&ui->mm, -1);
-    uint8_t data[3] = {0};
-    while (i >= 0) {
-        fill(&ui->mm, data, i);
-        send_midi_data(ui, data[0], data[1], data[2]);
-        i = next(&ui->mm, i);
-    }
-#endif
     return 0;
 }
 

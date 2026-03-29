@@ -28,25 +28,34 @@
 	RESOURCEHEADER := xresources.h
 ifeq ($(TARGET), Linux)
 	GUI_LDFLAGS += -I$(HEADER_DIR) -Wl,-Bstatic -L. $(UI_LIB) \
-	-Wl,-Bdynamic `pkg-config --cflags --libs cairo x11 fftw3f` 
+	-Wl,-Bdynamic `pkg-config --cflags --libs cairo x11` 
+
 	LDFLAGS += -fvisibility=hidden -shared -lm -fPIC -pthread -lpthread\
-	-Wl,-z,noexecstack -Wl,--no-undefined -Wl,--gc-sections
-	CXXFLAGS += -fPIC -DPIC -O2 -Wall -funroll-loops \
+	-Wl,-z,noexecstack -Wl,--no-undefined -Wl,--gc-sections \
+	`pkg-config --cflags --libs fftw3f` 
+
+	CXXFLAGS += -std=c++17 -D_FORTIFY_SOURCE=3 -fPIC -DPIC -O2 -Wall -funroll-loops \
 	-fomit-frame-pointer -fstrength-reduce -fstack-protector -fvisibility=hidden \
 	-fdata-sections -Wl,--gc-sections -Wl,--exclude-libs,ALL
+
 	SLP_LDFLAGS += -fvisibility=hidden -Wl,-Bstatic `pkg-config --cflags --libs xputty` \
-	-Wl,-Bdynamic `pkg-config --cflags --libs cairo x11 lilv-0` \
+	-Wl,-Bdynamic `pkg-config --cflags --libs cairo x11 lilv-0 fftw3f` \
 	-shared -lm -fPIC -Wl,-z,noexecstack -Wl,--no-undefined -Wl,--gc-sections
+
 	CFLAGS := -O2 -D_FORTIFY_SOURCE=2 -Wall -fstack-protector -fvisibility=hidden \
 	-fdata-sections -Wl,--gc-sections -Wl,-z,relro,-z,now -Wl,--exclude-libs,ALL
 else ifeq ($(TARGET), Windows)
-	CXXFLAGS += -D_FORTIFY_SOURCE=2 -I. -I./dsp -I./plugin -fPIC -DPIC -O2 -Wall -funroll-loops \
-	-fstack-protector -ffast-math -fomit-frame-pointer -fstrength-reduce \
+	CXXFLAGS += -std=c++17 -D_FORTIFY_SOURCE=2 -I. -I./dsp -I./plugin -fPIC -DPIC -O2 -Wall -funroll-loops \
+	-fstack-protector -fomit-frame-pointer -fstrength-reduce \
 	-fdata-sections -Wl,--gc-sections -Wl,--exclude-libs,ALL $(SSE_CFLAGS)
-	LDFLAGS += -I. -shared -lm $(PAWPAW_LFLAGS)
+
+	LDFLAGS += -I. -shared -lm $(PAWPAW_LFLAGS) \
+	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs fftw3f`
+
 	GUI_LDFLAGS += -I$(HEADER_DIR) -static-libgcc -static-libstdc++ \
-	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs cairo fftw3f` \
+	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs cairo` \
 	-L. $(LIB_DIR)libxputty.$(STATIC_LIB_EXT) -shared  -lm $(PAWPAW_LFLAGS)
+
 	TTLUPDATE = sed -i '/lv2:binary/ s/\.so/\.dll/ ' ../bin/$(BUNDLE)/manifest.ttl
 	TTLUPDATEGUI = sed -i '/a guiext:X11UI/ s/X11UI/WindowsUI/ ; /guiext:binary/ s/\.so/\.dll/ ' ../bin/$(BUNDLE)/$(NAME).ttl
 endif
