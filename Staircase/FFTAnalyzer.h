@@ -1,3 +1,20 @@
+
+/*
+ * FFTAnalyzer.h
+ *
+ * SPDX-License-Identifier:  BSD-3-Clause
+ *
+ * Copyright (C) 2025 brummer <brummer@web.de>
+ */
+
+
+/****************************************************************
+        FFTAnalyzer.h - frequency analysis 
+
+****************************************************************/
+
+
+
 #pragma once
 
 #include <fftw3.h>
