@@ -60,6 +60,61 @@ static void draw_text(cairo_t* cr, float x, float y, const char* txt)
     cairo_show_text(cr, txt);
 }
 
+static inline float one_pole_mag(float freq, float cutoff, float fs) {
+    float wc = 2.0f * (float)M_PI * cutoff;
+    float k  = wc / (wc + fs);
+
+    float a = k;
+    float b = 1.0f - k;
+
+    float omega = 2.0f * (float)M_PI * freq / fs;
+
+    float real = 1.0f - b * cosf(omega);
+    float imag =        b * sinf(omega);
+
+    float denom = sqrtf(real*real + imag*imag);
+    return a / denom;
+}
+
+static void draw_filter_overlay(cairo_t* cr, int width, int height, float sample_rate,
+           const float f_min, const float f_max, const float db_min,
+           const float db_max, float cutoff, int type) {
+
+    cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.65);
+    cairo_set_line_width(cr, 2.0);
+    int started_f = 0;
+    for (int i = 0; i < width; ++i) {
+        float norm = (float)i / (float)(width - 1);
+        float freq = f_min * powf(f_max / f_min, norm);
+        float mag = one_pole_mag(freq, cutoff, sample_rate);
+        // two one pole lowpass
+        if (type == 1) mag = mag * mag;
+        // one pole highpass
+        if (type == 0) {
+            float hp = 1.0f - mag;
+            mag = hp ;
+            cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.65);
+        }
+        float db = 20.0f * log10f(mag + 1e-20f);
+        float y  = db_to_y(db, db_min, db_max, height);
+        if (!started_f) {
+            cairo_move_to(cr, i, y);
+            started_f = 1;
+        } else {
+            cairo_line_to(cr, i, y);
+        }
+    }
+
+    cairo_stroke(cr);
+    float cx = freq_to_x(cutoff, f_min, f_max, width);
+    cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.5);
+    if (type == 0) cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.5);
+    cairo_set_line_width(cr, 1.0);
+    cairo_move_to(cr, cx, 0);
+    cairo_line_to(cr, cx, height);
+    cairo_stroke(cr);
+}
+
 static void draw_window(void *w_, void* user_data) {
     Widget_t *w = (Widget_t*)w_;
     X11_UI* ui = (X11_UI*)w->parent_struct;
@@ -107,6 +162,12 @@ static void draw_window(void *w_, void* user_data) {
         cairo_line_to(cr, width, y);
     }
     cairo_stroke(cr);
+
+    // LP + HP Filter overlay
+    float cutoff = adj_get_value(ui->widget[3]->adj);
+    draw_filter_overlay(cr, width, height, sample_rate, f_min, f_max, db_min, db_max, cutoff, 1);
+    cutoff = adj_get_value(ui->widget[4]->adj);
+    draw_filter_overlay(cr, width, height, sample_rate, f_min, f_max, db_min, db_max, cutoff, 0);
 
     // Spectrum Line
     cairo_set_source_rgba(cr,  0.2, 0.8, 0.3, 0.85);

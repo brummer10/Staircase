@@ -19,36 +19,49 @@
 
 class LM_EII12 {
 public:
-    float *cutoff;
+    float *heighcut;
+    float *lowcut;
     float *drive;
     float *amount;
     float  *onOff;
 
     void setSampleRate(float sr) {
         sampleRate = sr;
-        float wc = 2.0f * M_PI * cutoffState;
-        cutoff = &cutoffState;
+        float wc = 2.0f * M_PI * heighcutState;
+        heighcut = &heighcutState;
         float k  = wc / (wc + sr);
         a = k;
         b = 1.f - k;
+        float hwc = 2.0f * M_PI * lowcutState;
+        float hk  = hwc / (hwc + sr);
+        ha = hk;
+        hb = 1.f - hk;
     }
 
     inline void process(float* output, uint32_t n_samples) {
-        float wc = 2.0f * M_PI * *cutoff;
+        float wc = 2.0f * M_PI * *heighcut;
         float k  = wc / (wc + sampleRate);
         a = k;
         b = 1.f - k;
+        float hwc = 2.0f * M_PI * *lowcut;
+        float hk  = hwc / (hwc + sampleRate);
+        ha = hk;
+        hb = 1.f - hk;
         for (uint32_t i = 0; i < n_samples; i++) {
             float tmp0 = output[i];
+            hlp = 1e-15f + ha * tmp0 + hb * hlp - 1e-15f;
+            tmp0 = tmp0 - hlp;
             output[i] = process(tmp0);
         }
     }
 
 private:
-    float cutoffState = 12000.0f;
+    float heighcutState = 2100.0f;
+    float lowcutState = 220.0f;
     float sampleRate = 48000.0f;
 
-    float lp = 0.0f, a=0.0f, b=0.0f;
+    float lp1 = 0.0f, lp = 0.0f, a=0.0f, b=0.0f;
+    float hlp = 0.0f, ha=0.0f, hb=0.0f;
     constexpr static float mu = 255.f;
     constexpr static float q = 1.0f / 2048.0f;
 
@@ -68,8 +81,9 @@ private:
         x = std::round(x / q) * q;
         x = tanh_fast(x * *drive);
         lp = 1e-15f + a * x + b * lp - 1e-15f;
-        lp *= *amount;
-        return postSaturate(lp);
+        lp1 = 1e-15f + a * lp + b * lp1 - 1e-15f;
+        lp1 *= *amount;
+        return postSaturate(lp1);
     }
 };
 

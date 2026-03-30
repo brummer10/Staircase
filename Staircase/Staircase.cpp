@@ -163,15 +163,18 @@ void Xstaircase::connect_(uint32_t port,void* data)
             stair.onOff = static_cast<float*>(data);
             break;
         case 3:
-            stair.drive = static_cast<float*>(data);
+            stair.lowcut = static_cast<float*>(data);
             break;
         case 4:
-            stair.amount = static_cast<float*>(data);
+            stair.drive = static_cast<float*>(data);
             break;
         case 5:
-            stair.cutoff = static_cast<float*>(data);
+            stair.amount = static_cast<float*>(data);
             break;
         case 6:
+            stair.heighcut = static_cast<float*>(data);
+            break;
+        case 7:
             notify = (LV2_Atom_Sequence*)data;
             break;
         default:

@@ -33,6 +33,7 @@
 #include <lv2/patch/patch.h>
 #include <lv2/parameters/parameters.h>
 
+#include <math.h>
 
 // xwidgets.h includes xputty.h and all defined widgets from Xputty
 #include "xwidgets.h"

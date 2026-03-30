@@ -5,7 +5,7 @@
 
 #define HIDE_NAME 
 
-#define CONTROLS 4
+#define CONTROLS 5
 
 #define GUI_ELEMENTS 0
 
@@ -34,16 +34,19 @@ const char* plugin_set_name() {
 }
 
 void plugin_create_controller_widgets(X11_UI *ui, const char * plugin_uri) {
-    ui->widget[0] = add_lv2_toggle_button (ui->widget[0], ui->win, 2, "Enable", ui, 40,  49, 60, 60);
+    ui->widget[0] = add_lv2_toggle_button (ui->widget[0], ui->win, 2, "Enable", ui, 40,  10, 60, 30);
 
-    ui->widget[1] = add_lv2_knob (ui->widget[1], ui->win, 3, "Drive", ui, 140,  49, 60, 80);
+    ui->widget[4] = add_lv2_knob (ui->widget[4], ui->win, 3, "LowCut", ui, 40,  49, 60, 80);
+    set_adjustment(ui->widget[4]->adj, 220.0, 220.0, 20.0, 2200.0, 0.01, CL_LOGARITHMIC);
+
+    ui->widget[1] = add_lv2_knob (ui->widget[1], ui->win, 4, "Drive", ui, 140,  49, 60, 80);
     set_adjustment(ui->widget[1]->adj, 1.2, 1.2, 0.1, 4.0, 0.01, CL_CONTINUOS);
 
-    ui->widget[2] = add_lv2_knob (ui->widget[2], ui->win, 4, "Amount", ui, 240,  49, 60, 80);
+    ui->widget[2] = add_lv2_knob (ui->widget[2], ui->win, 5, "Amount", ui, 240,  49, 60, 80);
     set_adjustment(ui->widget[2]->adj, 0.75, 0.75, 0.1, 1.0, 0.01, CL_CONTINUOS);
 
-    ui->widget[3] = add_lv2_knob (ui->widget[3], ui->win, 5, "CutOff", ui, 340,  49, 60, 80);
-    set_adjustment(ui->widget[3]->adj, 12000.0, 12000.0, 40.0, 22000.0, 0.01, CL_LOGARITHMIC);
+    ui->widget[3] = add_lv2_knob (ui->widget[3], ui->win, 6, "HeighCut", ui, 340,  49, 60, 80);
+    set_adjustment(ui->widget[3]->adj, 2100.0, 2100.0, 40.0, 22000.0, 0.01, CL_LOGARITHMIC);
 
 }
 
