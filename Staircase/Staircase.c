@@ -45,7 +45,7 @@ void plugin_create_controller_widgets(X11_UI *ui, const char * plugin_uri) {
     ui->widget[2] = add_lv2_knob (ui->widget[2], ui->win, 5, "Amount", ui, 240,  49, 60, 80);
     set_adjustment(ui->widget[2]->adj, 0.75, 0.75, 0.1, 1.0, 0.01, CL_CONTINUOS);
 
-    ui->widget[3] = add_lv2_knob (ui->widget[3], ui->win, 6, "HeighCut", ui, 340,  49, 60, 80);
+    ui->widget[3] = add_lv2_knob (ui->widget[3], ui->win, 6, "HighCut", ui, 340,  49, 60, 80);
     set_adjustment(ui->widget[3]->adj, 2100.0, 2100.0, 40.0, 22000.0, 0.01, CL_LOGARITHMIC);
 
 }

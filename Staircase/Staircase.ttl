@@ -92,8 +92,8 @@ rdfs:comment """
       a lv2:InputPort ,
           lv2:ControlPort ;
       lv2:index 6 ;
-      lv2:symbol "Heightcut" ;
-      lv2:name "heighcut" ;
+      lv2:symbol "Hightcut" ;
+      lv2:name "highcut" ;
       lv2:portProperty pprop:logarithmic;
       lv2:default 2100.000000 ;
       lv2:minimum 40.000000 ;

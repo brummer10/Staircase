@@ -172,7 +172,7 @@ void Xstaircase::connect_(uint32_t port,void* data)
             stair.amount = static_cast<float*>(data);
             break;
         case 6:
-            stair.heighcut = static_cast<float*>(data);
+            stair.highcut = static_cast<float*>(data);
             break;
         case 7:
             notify = (LV2_Atom_Sequence*)data;

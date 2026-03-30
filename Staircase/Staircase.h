@@ -19,7 +19,7 @@
 
 class LM_EII12 {
 public:
-    float *heighcut;
+    float *highcut;
     float *lowcut;
     float *drive;
     float *amount;
@@ -27,8 +27,8 @@ public:
 
     void setSampleRate(float sr) {
         sampleRate = sr;
-        float wc = 2.0f * M_PI * heighcutState;
-        heighcut = &heighcutState;
+        float wc = 2.0f * M_PI * highcutState;
+        highcut = &highcutState;
         float k  = wc / (wc + sr);
         a = k;
         b = 1.f - k;
@@ -39,7 +39,7 @@ public:
     }
 
     inline void process(float* output, uint32_t n_samples) {
-        float wc = 2.0f * M_PI * *heighcut;
+        float wc = 2.0f * M_PI * *highcut;
         float k  = wc / (wc + sampleRate);
         a = k;
         b = 1.f - k;
@@ -56,7 +56,7 @@ public:
     }
 
 private:
-    float heighcutState = 2100.0f;
+    float highcutState = 2100.0f;
     float lowcutState = 220.0f;
     float sampleRate = 48000.0f;
 

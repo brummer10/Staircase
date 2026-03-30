@@ -41,21 +41,17 @@ static float freq_to_x(float freq, float f_min, float f_max, int width) {
     const float x_pad = 3.0f;
     if (freq < f_min) freq = f_min;
     if (freq > f_max) freq = f_max;
-
     float norm = log10f(freq / f_min) / log10f(f_max / f_min);
     return  x_pad + norm * (width - 2.0f * x_pad);
 }
 
 static inline float display_tilt(float freq) {
-    if (freq >= 1000.0f)
-        return 0.0f;
-
+    if (freq >= 1000.0f) return 0.0f;
     float t = log10f(freq / 1000.0f);
     return 20.0f * t;
 }
 
-static void draw_text(cairo_t* cr, float x, float y, const char* txt)
-{
+static void draw_text(cairo_t* cr, float x, float y, const char* txt) {
     cairo_move_to(cr, max(5,x), y);
     cairo_show_text(cr, txt);
 }
@@ -63,22 +59,18 @@ static void draw_text(cairo_t* cr, float x, float y, const char* txt)
 static inline float one_pole_mag(float freq, float cutoff, float fs) {
     float wc = 2.0f * (float)M_PI * cutoff;
     float k  = wc / (wc + fs);
-
     float a = k;
     float b = 1.0f - k;
-
     float omega = 2.0f * (float)M_PI * freq / fs;
-
     float real = 1.0f - b * cosf(omega);
     float imag =        b * sinf(omega);
-
     float denom = sqrtf(real*real + imag*imag);
     return a / denom;
 }
 
-static void draw_filter_overlay(cairo_t* cr, int width, int height, float sample_rate,
-           const float f_min, const float f_max, const float db_min,
-           const float db_max, float cutoff, int type) {
+static void draw_filter_overlay(cairo_t* cr, int width, int height,
+            float sample_rate, const float f_min, const float f_max,
+            const float db_min, const float db_max, float cutoff, int type) {
 
     cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.65);
     cairo_set_line_width(cr, 2.0);
