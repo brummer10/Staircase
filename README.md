@@ -49,6 +49,8 @@ Requirements:
 * liblv2-dev
 
 ```bash
+ git clone https://github.com/brummer10/Staircase.git
+ cd Staircase
  git submodule init
  git submodule update
  make

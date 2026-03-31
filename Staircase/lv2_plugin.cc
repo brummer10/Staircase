@@ -56,19 +56,21 @@ static void draw_text(cairo_t* cr, float x, float y, const char* txt) {
     cairo_show_text(cr, txt);
 }
 
-static inline float one_pole_mag(float freq, float cutoff, float fs) {
+static inline void one_pole_complex(float freq, float cutoff, float fs,
+                                    float* out_real, float* out_imag) {
     float wc = 2.0f * (float)M_PI * cutoff;
     float k  = wc / (wc + fs);
     float a = k;
     float b = 1.0f - k;
     float omega = 2.0f * (float)M_PI * freq / fs;
-    float real = 1.0f - b * cosf(omega);
-    float imag =        b * sinf(omega);
-    float denom = sqrtf(real*real + imag*imag);
-    return a / denom;
+    float denom_real = 1.0f - b * cosf(omega);
+    float denom_imag =        b * sinf(omega);
+    float denom_mag2 = denom_real*denom_real + denom_imag*denom_imag;
+    *out_real =  a * denom_real / denom_mag2;
+    *out_imag = -a * denom_imag / denom_mag2;
 }
 
-static void draw_filter_overlay(cairo_t* cr, int width, int height,
+static void draw_filter_overlay(cairo_t* cr, int width, int height, int state,
             float sample_rate, const float f_min, const float f_max,
             const float db_min, const float db_max, float cutoff, int type) {
 
@@ -78,15 +80,23 @@ static void draw_filter_overlay(cairo_t* cr, int width, int height,
     for (int i = 0; i < width; ++i) {
         float norm = (float)i / (float)(width - 1);
         float freq = f_min * powf(f_max / f_min, norm);
-        float mag = one_pole_mag(freq, cutoff, sample_rate);
-        // two one pole lowpass
-        if (type == 1) mag = mag * mag;
-        // one pole highpass
-        if (type == 0) {
-            float hp = 1.0f - mag;
-            mag = hp ;
+        float mag = 0.0f;
+        // two one pole highcut
+        if (type == 1) {
+            float lp_r, lp_i;
+            one_pole_complex(freq, cutoff, sample_rate, &lp_r, &lp_i);
+            float lp_mag = sqrtf(lp_r*lp_r + lp_i*lp_i);
+            mag = lp_mag * lp_mag;
+        // one pole lowcut
+        } else if (type == 0) {
+            float lp_r, lp_i;
+            one_pole_complex(freq, cutoff, sample_rate, &lp_r, &lp_i);
+            float hp_r = 1.0f - lp_r;
+            float hp_i =      - lp_i;
+            float hp_mag = sqrtf(hp_r*hp_r + hp_i*hp_i);
+            mag = hp_mag * hp_mag;
             cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.65);
-        }
+        }   
         float db = 20.0f * log10f(mag + 1e-20f);
         float y  = db_to_y(db, db_min, db_max, height);
         if (!started_f) {
@@ -102,6 +112,7 @@ static void draw_filter_overlay(cairo_t* cr, int width, int height,
     cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.5);
     if (type == 0) cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.5);
     cairo_set_line_width(cr, 1.0);
+    if (state) cairo_set_line_width(cr, 2.0);
     cairo_move_to(cr, cx, 0);
     cairo_line_to(cr, cx, height);
     cairo_stroke(cr);
@@ -109,6 +120,9 @@ static void draw_filter_overlay(cairo_t* cr, int width, int height,
 
 static void draw_window(void *w_, void* user_data) {
     Widget_t *w = (Widget_t*)w_;
+    Metrics_t metrics;
+    os_get_window_metrics(w, &metrics);
+    if (!metrics.visible) return;
     X11_UI* ui = (X11_UI*)w->parent_struct;
     const float* mags = ui->abuffer;
     int bins = ui->asize;
@@ -116,8 +130,8 @@ static void draw_window(void *w_, void* user_data) {
     int fft_size = bins * 2; // 2048;
     cairo_t* cr = w->crb;
 
-    int width  = w->width;
-    int height = w->height;
+    int width  = metrics.width;
+    int height = metrics.height;
 
     const float f_min = 20.0f;
     const float f_max = 20000.0f;
@@ -156,10 +170,10 @@ static void draw_window(void *w_, void* user_data) {
     cairo_stroke(cr);
 
     // LP + HP Filter overlay
-    float cutoff = adj_get_value(ui->widget[3]->adj);
-    draw_filter_overlay(cr, width, height, sample_rate, f_min, f_max, db_min, db_max, cutoff, 1);
-    cutoff = adj_get_value(ui->widget[4]->adj);
-    draw_filter_overlay(cr, width, height, sample_rate, f_min, f_max, db_min, db_max, cutoff, 0);
+    float cutoff = adj_get_value(ui->widget[3]->adj); // highcut
+    draw_filter_overlay(cr, width, height, ui->widget[3]->state, sample_rate, f_min, f_max, db_min, db_max, cutoff, 1);
+    cutoff = adj_get_value(ui->widget[4]->adj); // lowcut
+    draw_filter_overlay(cr, width, height, ui->widget[4]->state, sample_rate, f_min, f_max, db_min, db_max, cutoff, 0);
 
     // Spectrum Line
     cairo_set_source_rgba(cr,  0.2, 0.8, 0.3, 0.85);
@@ -535,10 +549,11 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
 static void cleanup(LV2UI_Handle handle) {
     X11_UI* ui = (X11_UI*)handle;
     plugin_cleanup(ui);
-    // Xputty free all memory used
-    main_quit(&ui->main);
+    destroy_widget(ui->win, &ui->main);
     free(ui->abuffer);
     free(ui->private_ptr);
+    // Xputty free all memory used
+    main_quit(&ui->main);
     free(ui);
 }
 

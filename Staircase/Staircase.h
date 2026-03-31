@@ -49,7 +49,8 @@ public:
         hb = 1.f - hk;
         for (uint32_t i = 0; i < n_samples; i++) {
             float tmp0 = output[i];
-            hlp = 1e-15f + ha * tmp0 + hb * hlp - 1e-15f;
+            hlp1 = 1e-15f + ha * tmp0 + hb * hlp1 - 1e-15f;
+            hlp = 1e-15f + ha * hlp1 + hb * hlp - 1e-15f;
             tmp0 = tmp0 - hlp;
             output[i] = process(tmp0);
         }
@@ -61,7 +62,7 @@ private:
     float sampleRate = 48000.0f;
 
     float lp1 = 0.0f, lp = 0.0f, a=0.0f, b=0.0f;
-    float hlp = 0.0f, ha=0.0f, hb=0.0f;
+    float hlp1 = 0.0f, hlp = 0.0f, ha=0.0f, hb=0.0f;
     constexpr static float mu = 255.f;
     constexpr static float q = 1.0f / 2048.0f;
 
