@@ -18,7 +18,6 @@
 #include <lv2/patch/patch.h>
 
 #include "Staircase.h"
-#include "StreamingResampler.h"
 #include "ParallelThread.h"
 #include "FFTAnalyzer.h"
 
@@ -55,8 +54,6 @@ class Xstaircase
 {
 private:
     LM_EII12 stair;
-    StreamingResampler resUp;
-    StreamingResampler resDown;
     ParallelThread     xrworker;
     FFTAnalyzer        ana;
     
@@ -122,6 +119,7 @@ Xstaircase::Xstaircase() :
 
 // destructor
 Xstaircase::~Xstaircase() {
+    ana.cleanup();
     xrworker.stop();
     delete[] abuffer;
 };
@@ -139,9 +137,7 @@ void Xstaircase::init_dsp_(uint32_t rate)
     ramp_down = ramp_down_step;
     ramp_up = 0.0;
     frames = 0;
-    stair.setSampleRate(2*rate);
-    resUp.setup(1, 8192, rate, 2*rate);
-    resDown.setup(1, 8192, 2*rate, rate);
+    stair.setSampleRate(rate);
 
     xrworker.setThreadName("Worker");
     xrworker.set<Xstaircase, &Xstaircase::analyse>(this);
@@ -163,18 +159,24 @@ void Xstaircase::connect_(uint32_t port,void* data)
             stair.onOff = static_cast<float*>(data);
             break;
         case 3:
-            stair.lowcut = static_cast<float*>(data);
+            stair.hpSlope = static_cast<float*>(data);
             break;
         case 4:
-            stair.drive = static_cast<float*>(data);
+            stair.lowcut = static_cast<float*>(data);
             break;
         case 5:
-            stair.amount = static_cast<float*>(data);
+            stair.drive = static_cast<float*>(data);
             break;
         case 6:
-            stair.highcut = static_cast<float*>(data);
+            stair.amount = static_cast<float*>(data);
             break;
         case 7:
+            stair.lpSlope = static_cast<float*>(data);
+            break;
+        case 8:
+            stair.highcut = static_cast<float*>(data);
+            break;
+        case 9:
             notify = (LV2_Atom_Sequence*)data;
             break;
         default:
@@ -234,11 +236,7 @@ void Xstaircase::run_dsp_(uint32_t n_samples)
          memcpy(buf0, input0, n_samples*sizeof(float));
     }
     if (!bypassed) {
-        int r = resUp.getOutSize(n_samples);
-        float buf[r];
-        resUp.resample(output0, buf, n_samples);
-        stair.process(buf, r);
-        resDown.resample(buf, output0, r);
+        stair.process(output0, n_samples);
     }
 
     // check if ramping is needed

@@ -59,7 +59,7 @@ public:
         float window_gain = compute_window_gain(window, N);
         norm_factor = (2.0f / (N * window_gain));
 
-        plan = fftwf_plan_dft_r2c_1d(N, in, out, FFTW_MEASURE);
+        plan = fftwf_plan_dft_r2c_1d(N, in, out, FFTW_ESTIMATE);
 
         for (int i = 0; i < bins; ++i)
             smooth[i] = -90.0f;
@@ -122,6 +122,22 @@ public:
 
     int getBins() const { return bins; }
 
+    void cleanup() {
+        if (!initialized) return;
+
+        fftwf_destroy_plan(plan);
+        fftwf_free(in);
+        fftwf_free(out);
+
+        delete[] window;
+        delete[] fifo;
+        delete[] smooth;
+        delete[] mags[0];
+        delete[] mags[1];
+
+        initialized = false;
+    }
+
 private:
     int N = 0, bins = 0;
     float sample_rate = 0.0f;
@@ -152,21 +168,6 @@ private:
     bool initialized = false;
 
 private:
-    void cleanup() {
-        if (!initialized) return;
-
-        fftwf_destroy_plan(plan);
-        fftwf_free(in);
-        fftwf_free(out);
-
-        delete[] window;
-        delete[] fifo;
-        delete[] smooth;
-        delete[] mags[0];
-        delete[] mags[1];
-
-        initialized = false;
-    }
 
     void build_hann(float* w, int N) {
         for (int i = 0; i < N; ++i) {

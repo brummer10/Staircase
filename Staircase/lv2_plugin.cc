@@ -56,10 +56,40 @@ static void draw_text(cairo_t* cr, float x, float y, const char* txt) {
     cairo_show_text(cr, txt);
 }
 
-static inline void one_pole_complex(float freq, float cutoff, float fs,
+static inline int slope_to_stages(int slope) {
+    if (slope == 0)   return 1; // 6 dB
+    if (slope == 1)   return 2; // 12 dB
+    if (slope == 2)   return 4; // 24 dB
+    return 6;                   // 36 dB
+}
+
+inline float compute_corrected_k(float wc, float fs, int stages) {
+    float target = powf(2.0f, -1.0f / stages);
+    float k = wc / (wc + fs);
+
+    for (int i = 0; i < 8; ++i) {
+        float b = 1.0f - k;
+        float omega = wc / fs;
+        float cos_w = cosf(omega);
+        float denom = 1.0f + b*b - 2.0f * b * cos_w;
+        float H2 = (k*k) / denom;
+        float err = H2 - target;
+        float dk = 1e-5f;
+        float k2 = k + dk;
+        float b2 = 1.0f - k2;
+        float denom2 = 1.0f + b2*b2 - 2.0f * b2 * cos_w;
+        float H2_2 = (k2*k2) / denom2;
+        float deriv = (H2_2 - H2) / dk;
+        k -= err / (deriv + 1e-12f);
+        k = fmaxf(1e-6f, fminf(0.9999f, k));
+    }
+    return k;
+}
+
+static inline void one_pole_lp_complex(float freq, int stages, float cutoff, float fs,
                                     float* out_real, float* out_imag) {
     float wc = 2.0f * (float)M_PI * cutoff;
-    float k  = wc / (wc + fs);
+    float k = compute_corrected_k(wc, fs, stages);
     float a = k;
     float b = 1.0f - k;
     float omega = 2.0f * (float)M_PI * freq / fs;
@@ -70,35 +100,60 @@ static inline void one_pole_complex(float freq, float cutoff, float fs,
     *out_imag = -a * denom_imag / denom_mag2;
 }
 
-static void draw_filter_overlay(cairo_t* cr, int width, int height, int state,
-            float sample_rate, const float f_min, const float f_max,
-            const float db_min, const float db_max, float cutoff, int type) {
+static inline void one_pole_hp_complex(float freq, float cutoff, float fs,
+                                       float* out_real, float* out_imag) {
+    float wc = 2.0f * (float)M_PI * cutoff;
+    float k  = wc / (wc + fs);
+    float b  = 1.0f - k;
+    float omega = 2.0f * (float)M_PI * freq / fs;
+    float cos_w = cosf(omega);
+    float sin_w = sinf(omega);
+    float num_real = 1.0f - cos_w;
+    float num_imag =        sin_w;
+    float denom_real = 1.0f - b * cos_w;
+    float denom_imag =        b * sin_w;
+    float denom_mag2 = denom_real * denom_real + denom_imag * denom_imag;
+    *out_real = (num_real * denom_real + num_imag * denom_imag) / denom_mag2;
+    *out_imag = (num_imag * denom_real - num_real * denom_imag) / denom_mag2;
+}
 
-    cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.65);
-    cairo_set_line_width(cr, 2.0);
+static void draw_filter_overlay(cairo_t* cr, int width, int height, int state, int state2,
+            float sample_rate, const float f_min, const float f_max,
+            const float db_min, const float db_max,
+            float cutoff, int stages, int type) {
+
+    cairo_set_line_width(cr, state2 ? 3.0 : 2.0);
     int started_f = 0;
+
     for (int i = 0; i < width; ++i) {
         float norm = (float)i / (float)(width - 1);
         float freq = f_min * powf(f_max / f_min, norm);
-        float mag = 0.0f;
-        // two one pole highcut
-        if (type == 1) {
-            float lp_r, lp_i;
-            one_pole_complex(freq, cutoff, sample_rate, &lp_r, &lp_i);
-            float lp_mag = sqrtf(lp_r*lp_r + lp_i*lp_i);
-            mag = lp_mag * lp_mag;
-        // one pole lowcut
-        } else if (type == 0) {
-            float lp_r, lp_i;
-            one_pole_complex(freq, cutoff, sample_rate, &lp_r, &lp_i);
-            float hp_r = 1.0f - lp_r;
-            float hp_i =      - lp_i;
-            float hp_mag = sqrtf(hp_r*hp_r + hp_i*hp_i);
-            mag = hp_mag * hp_mag;
-            cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.65);
-        }   
+
+        float mag = 1.0f;
+
+        for (int s = 0; s < stages; ++s) {
+
+            if (type == 1) {
+                // Lowpass
+                float lp_r, lp_i;
+                one_pole_lp_complex(freq, stages, cutoff, sample_rate, &lp_r, &lp_i);
+                float lp_mag = sqrtf(lp_r*lp_r + lp_i*lp_i);
+                mag *= lp_mag;
+                cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.65);
+            } else {
+                // Highpass
+                float hp_r, hp_i;
+                float correctedFc = cutoff / sqrtf((float)stages);
+                one_pole_hp_complex(freq, correctedFc, sample_rate, &hp_r, &hp_i);
+                float hp_mag = sqrtf(hp_r*hp_r + hp_i*hp_i);
+                mag *= hp_mag;
+                cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.65);
+            }
+        }
+
         float db = 20.0f * log10f(mag + 1e-20f);
         float y  = db_to_y(db, db_min, db_max, height);
+
         if (!started_f) {
             cairo_move_to(cr, i, y);
             started_f = 1;
@@ -107,12 +162,30 @@ static void draw_filter_overlay(cairo_t* cr, int width, int height, int state,
         }
     }
 
-    cairo_stroke(cr);
+    cairo_stroke_preserve(cr);
+    if (type == 1) {
+        cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.07);
+        cairo_line_to(cr, width, 0);
+        cairo_line_to(cr,0, 0);
+        cairo_close_path(cr);
+        cairo_fill(cr);
+    } else {
+        cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.09);
+        cairo_line_to(cr,0, 0);
+        cairo_line_to(cr,0, height);
+        cairo_close_path(cr);
+        cairo_fill(cr);
+    }
+
+    // Cutoff Line
     float cx = freq_to_x(cutoff, f_min, f_max, width);
-    cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.5);
-    if (type == 0) cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.5);
-    cairo_set_line_width(cr, 1.0);
-    if (state) cairo_set_line_width(cr, 2.0);
+
+    if (type == 1)
+        cairo_set_source_rgba(cr, 0.9, 0.6, 0.2, 0.5);
+    else
+        cairo_set_source_rgba(cr, 0.2, 0.6, 0.9, 0.5);
+
+    cairo_set_line_width(cr, state ? 2.0 : 1.0);
     cairo_move_to(cr, cx, 0);
     cairo_line_to(cr, cx, height);
     cairo_stroke(cr);
@@ -159,7 +232,7 @@ static void draw_window(void *w_, void* user_data) {
     cairo_stroke(cr);
 
     // Grid: dB
-    float db_lines[] = {-60, -40, -24, -12, 0};
+    float db_lines[] = { -60, -48, -36, -24, -12, 0};
     int num_db = sizeof(db_lines) / sizeof(db_lines[0]);
 
     for (int i = 0; i < num_db; ++i) {
@@ -171,12 +244,18 @@ static void draw_window(void *w_, void* user_data) {
 
     // LP + HP Filter overlay
     float cutoff = adj_get_value(ui->widget[3]->adj); // highcut
-    draw_filter_overlay(cr, width, height, ui->widget[3]->state, sample_rate, f_min, f_max, db_min, db_max, cutoff, 1);
+    int stages = slope_to_stages((int)adj_get_value(ui->widget[6]->adj));
+    draw_filter_overlay(cr, width, height, ui->widget[3]->state, ui->widget[6]->state,
+                        sample_rate, f_min, f_max, db_min, db_max, cutoff, stages, 1);
     cutoff = adj_get_value(ui->widget[4]->adj); // lowcut
-    draw_filter_overlay(cr, width, height, ui->widget[4]->state, sample_rate, f_min, f_max, db_min, db_max, cutoff, 0);
+    stages = slope_to_stages((int)adj_get_value(ui->widget[5]->adj));
+    draw_filter_overlay(cr, width, height, ui->widget[4]->state, ui->widget[5]->state,
+                        sample_rate, f_min, f_max, db_min, db_max, cutoff, stages, 0);
 
     // Spectrum Line
-    cairo_set_source_rgba(cr,  0.2, 0.8, 0.3, 0.85);
+    cairo_set_source_rgba(cr, 0.17, 0.82, 0.64, 0.75);
+    cairo_set_line_width(cr, 1.0);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
     int started = 0;
 
     for (int i = 1; i < bins; ++i) {
@@ -204,7 +283,7 @@ static void draw_window(void *w_, void* user_data) {
 
     // Spectrum fill
     if (started) {
-        cairo_set_source_rgba(cr,  0.2, 0.8, 0.3, 0.15);
+        cairo_set_source_rgba(cr,  0.17, 0.82, 0.64, 0.15);
         cairo_line_to(cr, width, height);
         cairo_line_to(cr, 3, height);
         cairo_close_path(cr);
@@ -234,6 +313,38 @@ static void draw_window(void *w_, void* user_data) {
     }
 }
 
+static void dummy_expose(void *w_, void* user_data) {
+}
+
+static void draw_my_combobox(void *w_, void* user_data) {
+    Widget_t *w = (Widget_t*)w_;
+    if (!w) return;
+    Metrics_t metrics;
+    os_get_window_metrics(w, &metrics);
+    if (!metrics.visible) return;
+    int v = (int)adj_get_value(w->adj);
+    int vl = v - (int) w->adj->min_value;
+   // if (v<0) return;
+    Widget_t * menu = w->childlist->childs[1];
+    Widget_t* view_port =  menu->childlist->childs[0];
+    ComboBox_t *comboboxlist = (ComboBox_t*)view_port->parent_struct;
+
+    char label[32];
+    memset(label, '\0', sizeof(char)*32);
+    cairo_text_extents_t extents_f;
+    cairo_set_font_size (w->crb, w->app->normal_font);
+    if (w->state) cairo_set_font_size (w->crb, w->app->normal_font+2);
+    widget_set_scale(w);
+    strcpy(label, comboboxlist->list_names[vl]);
+    use_text_color_scheme(w, get_color_state(w));
+    cairo_text_extents(w->crb, label, &extents_f);
+    double twf = extents_f.width/2.0;
+    cairo_move_to (w->crb, max(5 * w->app->hdpi,(w->scale.init_width*0.5)-twf), (w->scale.init_height - extents_f.height*0.5)  * w->app->hdpi );
+    cairo_show_text(w->crb, label);
+    widget_reset_scale(w);
+
+}
+
 // if controller value changed send notify to host
 static void value_changed(void *w_, void* user_data) {
     Widget_t *w = (Widget_t*)w_;
@@ -242,7 +353,6 @@ static void value_changed(void *w_, void* user_data) {
     ui->write_function(ui->controller,w->data,sizeof(float),0,&v);
     plugin_value_changed(ui, w, (PortIndex)w->data);
 }
-
 
 Widget_t* add_lv2_knob(Widget_t *w, Widget_t *p, PortIndex index, const char * label,
                                 X11_UI* ui, int x, int y, int width, int height) {
@@ -254,12 +364,13 @@ Widget_t* add_lv2_knob(Widget_t *w, Widget_t *p, PortIndex index, const char * l
     return w;
 }
 
-
 Widget_t* add_lv2_combobox(Widget_t *w, Widget_t *p, PortIndex index, const char * label,
                                 X11_UI* ui, int x, int y, int width, int height) {
     w = add_combobox(p, label, x, y, width, height);
     w->parent_struct = ui;
     w->data = index;
+    w->func.expose_callback = draw_my_combobox;
+    w->childlist->childs[0]->func.expose_callback = dummy_expose;
     w->func.value_changed_callback = value_changed;
     return w;
 }
@@ -549,11 +660,10 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
 static void cleanup(LV2UI_Handle handle) {
     X11_UI* ui = (X11_UI*)handle;
     plugin_cleanup(ui);
-    destroy_widget(ui->win, &ui->main);
-    free(ui->abuffer);
-    free(ui->private_ptr);
     // Xputty free all memory used
     main_quit(&ui->main);
+    free(ui->abuffer);
+    free(ui->private_ptr);
     free(ui);
 }
 

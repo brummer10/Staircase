@@ -5,7 +5,7 @@
 
 #define HIDE_NAME 
 
-#define CONTROLS 5
+#define CONTROLS 7
 
 #define GUI_ELEMENTS 0
 
@@ -26,7 +26,7 @@ void plugin_value_changed(X11_UI *ui, Widget_t *w, PortIndex index) {
 
 void plugin_set_window_size(int *w,int *h,const char * plugin_uri) {
     (*w) = 440; //set initial width of main window
-    (*h) = 160; //set initial height of main window
+    (*h) = 180; //set initial height of main window
 }
 
 const char* plugin_set_name() {
@@ -36,16 +36,28 @@ const char* plugin_set_name() {
 void plugin_create_controller_widgets(X11_UI *ui, const char * plugin_uri) {
     ui->widget[0] = add_lv2_toggle_button (ui->widget[0], ui->win, 2, "Enable", ui, 40,  10, 60, 30);
 
-    ui->widget[4] = add_lv2_knob (ui->widget[4], ui->win, 3, "LowCut", ui, 40,  49, 60, 80);
+    ui->widget[5] = add_lv2_combobox(ui->widget[5],ui->win, 3, "HP slope", ui, 40, 130, 60, 30);
+    combobox_add_entry(ui->widget[5],"6 dB");
+    combobox_add_entry(ui->widget[5],"12 dB");
+    combobox_add_entry(ui->widget[5],"24 dB");
+    combobox_add_entry(ui->widget[5],"36 dB");
+
+    ui->widget[4] = add_lv2_knob (ui->widget[4], ui->win, 4, "LowCut", ui, 40,  60, 60, 80);
     set_adjustment(ui->widget[4]->adj, 220.0, 220.0, 20.0, 2200.0, 0.01, CL_LOGARITHMIC);
 
-    ui->widget[1] = add_lv2_knob (ui->widget[1], ui->win, 4, "Drive", ui, 140,  49, 60, 80);
+    ui->widget[1] = add_lv2_knob (ui->widget[1], ui->win, 5, "Drive", ui, 140,  60, 60, 80);
     set_adjustment(ui->widget[1]->adj, 1.2, 1.2, 0.1, 4.0, 0.01, CL_CONTINUOS);
 
-    ui->widget[2] = add_lv2_knob (ui->widget[2], ui->win, 5, "Amount", ui, 240,  49, 60, 80);
+    ui->widget[2] = add_lv2_knob (ui->widget[2], ui->win, 6, "Amount", ui, 240,  60, 60, 80);
     set_adjustment(ui->widget[2]->adj, 0.75, 0.75, 0.1, 1.0, 0.01, CL_CONTINUOS);
 
-    ui->widget[3] = add_lv2_knob (ui->widget[3], ui->win, 6, "HighCut", ui, 340,  49, 60, 80);
+    ui->widget[6] = add_lv2_combobox(ui->widget[6],ui->win, 7, "HP slope", ui, 340, 130, 60, 30);
+    combobox_add_entry(ui->widget[6],"6 dB");
+    combobox_add_entry(ui->widget[6],"12 dB");
+    combobox_add_entry(ui->widget[6],"24 dB");
+    combobox_add_entry(ui->widget[6],"36 dB");
+
+    ui->widget[3] = add_lv2_knob (ui->widget[3], ui->win, 8, "HighCut", ui, 340,  60, 60, 80);
     set_adjustment(ui->widget[3]->adj, 2100.0, 2100.0, 40.0, 22000.0, 0.01, CL_LOGARITHMIC);
 
 }
