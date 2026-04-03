@@ -90,7 +90,7 @@ public:
             for (int s = 0; s < lpStages; ++s) {
                 x = onepole_lp(x, lp_state[s], a, b);
             }
-            output[i] = dc_block(x);
+            output[i] = x;
         }
     }
 
@@ -154,7 +154,7 @@ private:
         float hk  = hwc / (hwc + sampleRate);
         ha = fmaxf(1e-6f, fminf(0.9999f, hk));
 
-        float hbwc = 2.0f * M_PI * fmaxf(16.0f,correctedFc * 0.25f);
+        float hbwc = 2.0f * M_PI * fmaxf(16.0f,correctedFc * 0.5f);
         float hbk  = hbwc / (hbwc + sampleRate);
         hb = fmaxf(1e-6f, fminf(0.9999f, hbk));
     }

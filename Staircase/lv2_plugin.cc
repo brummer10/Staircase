@@ -253,8 +253,13 @@ static void draw_window(void *w_, void* user_data) {
                         sample_rate, f_min, f_max, db_min, db_max, cutoff, stages, 0);
 
     // Spectrum Line
-    cairo_set_source_rgba(cr, 0.17, 0.82, 0.64, 0.75);
+    //cairo_set_source_rgba(cr, 0.17, 0.82, 0.64, 0.75);
+    cairo_pattern_t* lpat = cairo_pattern_create_linear(0, 0, 0, height);
+    cairo_pattern_add_color_stop_rgba(lpat, 0.0, 0.75, 0.2, 0.9, 0.65);
+    cairo_pattern_add_color_stop_rgba(lpat, 1.0, 0.45, 0.2, 0.75, 0.65);
+    cairo_set_source(cr, lpat);
     cairo_set_line_width(cr, 1.0);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
     int started = 0;
 
@@ -280,14 +285,20 @@ static void draw_window(void *w_, void* user_data) {
         }
     }
     cairo_stroke_preserve(cr);
+    cairo_pattern_destroy(lpat);
 
     // Spectrum fill
     if (started) {
-        cairo_set_source_rgba(cr,  0.17, 0.82, 0.64, 0.15);
+        //cairo_set_source_rgba(cr,  0.17, 0.82, 0.64, 0.15);
         cairo_line_to(cr, width, height);
         cairo_line_to(cr, 3, height);
         cairo_close_path(cr);
+        cairo_pattern_t* pat = cairo_pattern_create_linear(0, 0, 0, height);
+        cairo_pattern_add_color_stop_rgba(pat, 0.0, 0.75, 0.2, 0.9, 0.25);
+        cairo_pattern_add_color_stop_rgba(pat, 1.0, 0.45, 0.2, 0.75, 0.05);
+        cairo_set_source(cr, pat);
         cairo_fill(cr);
+        cairo_pattern_destroy(pat);
     }
 
     // dB Labels
