@@ -63,7 +63,7 @@ static inline int slope_to_stages(int slope) {
     return 6;                   // 36 dB
 }
 
-inline float compute_corrected_k(float wc, float fs, int stages) {
+static inline float compute_corrected_k(float wc, float fs, int stages) {
     float target = powf(2.0f, -1.0f / stages);
     float k = wc / (wc + fs);
 
