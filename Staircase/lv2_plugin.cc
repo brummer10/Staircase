@@ -325,11 +325,11 @@ static void draw_window(void *w_, void* user_data) {
     }
 }
 
-static void null_callback(void *, void*) {
+static void null_callback(void *w_, void *user_data) {
     
 }
 
-static void dummy_callback(void *, void*, void*) {
+static void dummy_callback(void *w_, void *button, void *user_data) {
     
 }
 
