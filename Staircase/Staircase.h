@@ -72,6 +72,7 @@ public:
         // run compander and distortion 2 x oversampled
         uint32_t r = resUp.getOutSize(n_samples);
         float buf[r];
+        memset(buf, 0, r * sizeof(float));
         resUp.resample(output, buf, n_samples);
         for (uint32_t i = 0; i < r; i++) {
             float x = buf[i];

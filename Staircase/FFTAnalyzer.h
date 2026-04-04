@@ -54,19 +54,25 @@ public:
         mags[0] = new float[bins];
         mags[1] = new float[bins];
 
+        std::memset(in, 0,  N * sizeof(float));
+        std::memset(out, 0,  N * sizeof(float));
+        std::memset(window, 0, N * sizeof(float));
+        std::memset(fifo, 0, N * sizeof(float));
+        std::memset(smooth, 0, bins * sizeof(float));
+
+        std::memset(mags[0], 0, bins * sizeof(float));
+        std::memset(mags[1], 0, bins * sizeof(float));
+
         build_hann(window, N);
 
         float window_gain = compute_window_gain(window, N);
         norm_factor = (2.0f / (N * window_gain));
-
         plan = fftwf_plan_dft_r2c_1d(N, in, out, FFTW_ESTIMATE);
 
-        for (int i = 0; i < bins; ++i)
-            smooth[i] = -90.0f;
+        for (int i = 0; i < bins; ++i) smooth[i] = -90.0f;
 
         attack  = 0.6f;
         release = 0.05f;
-
         initialized = true;
     }
 

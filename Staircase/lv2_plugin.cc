@@ -39,9 +39,10 @@ static float db_to_y(float db, float db_min, float db_max, int height) {
 
 static float freq_to_x(float freq, float f_min, float f_max, int width) {
     const float x_pad = 3.0f;
+    const float inv_log_range = 1.0f / log10f(f_max / f_min);
     if (freq < f_min) freq = f_min;
     if (freq > f_max) freq = f_max;
-    float norm = log10f(freq / f_min) / log10f(f_max / f_min);
+    float norm = log10f(freq / f_min) * inv_log_range;
     return  x_pad + norm * (width - 2.0f * x_pad);
 }
 
@@ -594,6 +595,7 @@ static LV2UI_Handle instantiate(const LV2UI_Descriptor * descriptor,
     ui->private_ptr = NULL;
     ui->need_resize = 1;
     ui->abuffer = (float*) calloc (8192, sizeof(float));
+    memset(ui->abuffer, 0, 8192 * sizeof(float));
     ui->asize = 0;
     ui->map = NULL;
     LV2_Options_Option *opts = NULL;
