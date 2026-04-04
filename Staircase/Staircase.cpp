@@ -68,7 +68,7 @@ private:
     float* input0;
     float* output0;
     float* abuffer;
-    float bypass_;
+    uint32_t bypass_;
     int frames;
     // bypass ramping
     bool needs_ramp_down;
@@ -165,18 +165,21 @@ void Xstaircase::connect_(uint32_t port,void* data)
             stair.lowcut = static_cast<float*>(data);
             break;
         case 5:
-            stair.drive = static_cast<float*>(data);
+            stair.distMode = static_cast<float*>(data);
             break;
         case 6:
-            stair.amount = static_cast<float*>(data);
+            stair.drive = static_cast<float*>(data);
             break;
         case 7:
-            stair.lpSlope = static_cast<float*>(data);
+            stair.amount = static_cast<float*>(data);
             break;
         case 8:
-            stair.highcut = static_cast<float*>(data);
+            stair.lpSlope = static_cast<float*>(data);
             break;
         case 9:
+            stair.highcut = static_cast<float*>(data);
+            break;
+        case 10:
             notify = (LV2_Atom_Sequence*)data;
             break;
         default:

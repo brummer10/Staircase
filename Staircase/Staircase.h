@@ -15,6 +15,7 @@
 
 #pragma once
 #include <cmath>
+#include <algorithm>
 #include "StreamingResampler.h"
 
 class LM_EII12 {
@@ -26,6 +27,7 @@ public:
     float *onOff = nullptr;
     float *hpSlope = nullptr;
     float *lpSlope = nullptr;
+    float *distMode = nullptr;
 
     void setSampleRate(float sr) {
         sampleRate = sr;
@@ -41,6 +43,7 @@ public:
         const float amountVal = amount ? *amount : 0.75f;
         const int hpSlopesVal = hpSlope ? (int)*hpSlope : 1;
         const int lpSlopesVal = lpSlope ? (int)*lpSlope : 1;
+        const int distModeVal = distMode ? (int)*distMode : 0;
         
         const int hpStages = slopeToStages(hpSlopesVal);
         const int lpStages = slopeToStages(lpSlopesVal);
@@ -76,7 +79,7 @@ public:
         resUp.resample(output, buf, n_samples);
         for (uint32_t i = 0; i < r; i++) {
             float x = buf[i];
-            buf[i] = processSample(x, driveVal, amountVal);
+            buf[i] = processSample(x, driveVal, amountVal, distModeVal);
         }
         resDown.resample(buf, output, r);
         // run post highpass and lowpass filters
@@ -117,6 +120,12 @@ private:
 
     constexpr static float mu = 255.f;
     constexpr static float q = 1.0f / 2048.0f;
+
+    enum DistMode {
+        SOFT,
+        CRUNCH,
+        ROCK
+    };
 
     // compute lowpass cutoff frequency compensation for used stages
     inline float compute_corrected_k(float wc, float fs, int stages) {
@@ -200,8 +209,14 @@ private:
         return y;
     }
 
-    // compander, distortion and saturation
-    inline float processSample(float x, const float driveVal, const float amountVal) {
+    inline float softDist(float x, const float driveVal, const float amountVal) {
+        x *= driveVal;
+        x = tanh_fast(x * driveVal);
+        x = 1e-15f + x - 1e-15f;
+        return x * amountVal;
+    }
+
+    inline float crunchDist(float x, const float driveVal, const float amountVal) {
         x *= driveVal;
         float s = copysignf(1.f, x);
         x = s * log1p(mu * fabsf(x)) / log1p(mu);
@@ -209,5 +224,34 @@ private:
         x = tanh_fast(x * driveVal);
         x *= amountVal;
         return postSaturate(x, driveVal);
+    }
+
+    inline float metalDist(float x, const float driveVal, const float amountVal) {
+        x *= driveVal * 12.0f;
+        x = std::clamp(x, -1.5f, 1.5f);
+        x = x - (x * x * x) * 0.2f;
+        x = std::clamp(x, -0.9f, 0.9f);
+        float s = copysignf(1.0f, x);
+        float a = (s > 0.0f) ? 2.0f : 1.5f;
+        float t = -fabsf(x) * a;
+        t = fmaxf(t, -50.0f);
+        x = s * (1.0f - expf(t));
+        x = 1e-15f + x - 1e-15f;
+        return dc_block(x * amountVal);
+    }
+
+    // compander, distortion and saturation
+    inline float processSample(float x, const float driveVal, const float amountVal, const int distModeVal) {
+        if (fabsf(x) < 1e-20f) return 0.0f;
+        switch (distModeVal)
+        {
+            case (SOFT)   : return softDist(x, driveVal, amountVal);
+            break;
+            case (CRUNCH) : return crunchDist(x, driveVal, amountVal);
+            break;
+            case (ROCK)  : return metalDist(x, driveVal, amountVal);
+            break;
+        }
+        return x;
     }
 };

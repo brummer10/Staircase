@@ -325,7 +325,12 @@ static void draw_window(void *w_, void* user_data) {
     }
 }
 
-static void dummy_expose(void *w_, void* user_data) {
+static void null_callback(void *, void*) {
+    
+}
+
+static void dummy_callback(void *, void*, void*) {
+    
 }
 
 static void draw_my_combobox(void *w_, void* user_data) {
@@ -382,7 +387,9 @@ Widget_t* add_lv2_combobox(Widget_t *w, Widget_t *p, PortIndex index, const char
     w->parent_struct = ui;
     w->data = index;
     w->func.expose_callback = draw_my_combobox;
-    w->childlist->childs[0]->func.expose_callback = dummy_expose;
+    w->childlist->childs[0]->func.expose_callback = null_callback;
+    w->childlist->childs[0]->func.button_release_callback = dummy_callback;
+    destroy_widget(w->childlist->childs[0], w->app);
     w->func.value_changed_callback = value_changed;
     return w;
 }
@@ -678,10 +685,6 @@ static void cleanup(LV2UI_Handle handle) {
     free(ui->abuffer);
     free(ui->private_ptr);
     free(ui);
-}
-
-static void null_callback(void *w_, void* user_data) {
-    
 }
 
 /*---------------------------------------------------------------------

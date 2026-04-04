@@ -23,6 +23,7 @@ It is designed for efficient DSP performance and a clean, responsive UI.
 
 * **HP slope** – Controls low cut filter slope (6, 12, 24, 36 dB/OCT)
 * **LowCut** – Removes low frequencies before distortion
+* **Dist Mode** – Controls distortion mode (Soft, Crunch, Rock)
 * **Drive** – Controls distortion intensity
 * **Amount** – Output level / wet amount
 * **LP slope** – Controls high cut filter slope (6, 12, 24, 36 dB/OCT)
