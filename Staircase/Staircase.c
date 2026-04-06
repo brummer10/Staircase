@@ -46,6 +46,7 @@ void plugin_create_controller_widgets(X11_UI *ui, const char * plugin_uri) {
     set_adjustment(ui->widget[4]->adj, 220.0, 220.0, 20.0, 2200.0, 0.01, CL_LOGARITHMIC);
 
     ui->widget[7] = add_lv2_combobox(ui->widget[7],ui->win, 5, "Dist Mode", ui, 140, 130, 60, 30);
+    combobox_add_entry(ui->widget[7],"Off");
     combobox_add_entry(ui->widget[7],"Soft");
     combobox_add_entry(ui->widget[7],"Crunch");
     combobox_add_entry(ui->widget[7],"Rock");
@@ -63,7 +64,7 @@ void plugin_create_controller_widgets(X11_UI *ui, const char * plugin_uri) {
     combobox_add_entry(ui->widget[6],"36 dB");
 
     ui->widget[3] = add_lv2_knob (ui->widget[3], ui->win, 9, "HighCut", ui, 340,  60, 60, 80);
-    set_adjustment(ui->widget[3]->adj, 2100.0, 2100.0, 40.0, 22000.0, 0.01, CL_LOGARITHMIC);
+    set_adjustment(ui->widget[3]->adj, 2100.0, 2100.0, 110.0, 22000.0, 0.01, CL_LOGARITHMIC);
 
 }
 

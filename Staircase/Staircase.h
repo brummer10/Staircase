@@ -42,13 +42,15 @@ public:
         const float driveVal = drive ? *drive : 1.2f;
         const float amountVal = amount ? *amount : 0.75f;
         const int hpSlopesVal = hpSlope ? (int)*hpSlope : 1;
-        const int lpSlopesVal = lpSlope ? (int)*lpSlope : 1;
-        const int distModeVal = distMode ? (int)*distMode : 0;
-        
+        const int lpSlopesVal = lpSlope ? (int)*lpSlope : 1;        
         const int hpStages = slopeToStages(hpSlopesVal);
         const int lpStages = slopeToStages(lpSlopesVal);
-        // update filter cutoff frequencies
-        updateCoeffs(hpStages, lpStages, highcutVal, lowcutVal);
+
+        // check if dist model have changed
+        if (distModeVal != (int)*distMode) {
+            distModeVal = distMode ? (int)*distMode : 0;
+            setMode();
+        }
         // check if highpass filter stages have changed
         if (hpStages != lastHpStages) {
             for (int i = hpStages; i < MAX_STAGES; ++i) {
@@ -63,6 +65,15 @@ public:
                 lp_state[i] = 1e-15f;
             lastLpStages = lpStages;
         }
+        // update filter coeffs if needed
+        if (hpCoeffs != ((float)hpStages + lowcutVal)) {
+            hpCoeffs = (float)hpStages + lowcutVal;
+            updateHpCoeffs(hpStages, lowcutVal);
+        }
+        if (lpCoeffs != ((float)lpStages + highcutVal)) {
+            lpCoeffs = (float)lpStages + highcutVal;
+            updateLpCoeffs(lpStages, highcutVal);
+        }
         // run pre highpass filter (remove mud)
         for (uint32_t i = 0; i < n_samples; i++) {
             float x = output[i];
@@ -72,14 +83,14 @@ public:
             }
             output[i] = y;
         }
-        // run compander and distortion 2 x oversampled
+        // run distortion 2 x oversampled
         uint32_t r = resUp.getOutSize(n_samples);
         float buf[r];
         memset(buf, 0, r * sizeof(float));
         resUp.resample(output, buf, n_samples);
         for (uint32_t i = 0; i < r; i++) {
             float x = buf[i];
-            buf[i] = processSample(x, driveVal, amountVal, distModeVal);
+            buf[i] = (this->*dist)(x, driveVal, amountVal);
         }
         resDown.resample(buf, output, r);
         // run post highpass and lowpass filters
@@ -99,10 +110,13 @@ public:
     }
 
 private:
+    float (LM_EII12::*dist)(float x, const float driveVal, const float amountVal);
     StreamingResampler resUp;
     StreamingResampler resDown;
     float sampleRate = 48000.0f;
-
+    int distModeVal = -1;
+    float hpCoeffs = 0.0f;
+    float lpCoeffs = 0.0f;
     // Filter States
     static constexpr int MAX_STAGES = 6;
     float lp_state[MAX_STAGES] = {1e-15f};
@@ -122,10 +136,27 @@ private:
     constexpr static float q = 1.0f / 2048.0f;
 
     enum DistMode {
+        OFF,
         SOFT,
         CRUNCH,
         ROCK
     };
+
+    void setMode() {
+        switch (distModeVal)
+        {
+            case (OFF)    : this->dist = &LM_EII12::offDist;
+            break;
+            case (SOFT)   : this->dist = &LM_EII12::softDist;
+            break;
+            case (CRUNCH) : this->dist = &LM_EII12::crunchDist;
+            break;
+            case (ROCK)   : this->dist = &LM_EII12::rockDist;
+            break;
+            default       : this->dist = &LM_EII12::softDist;
+            break;
+        }        
+    }
 
     // compute lowpass cutoff frequency compensation for used stages
     inline float compute_corrected_k(float wc, float fs, int stages) {
@@ -151,20 +182,22 @@ private:
         return k;
     }
 
-    // update filter cutoff frequencies
-    inline void updateCoeffs(const int hpStages, const int lpStages,
-                    const float highcutVal, const float lowcutVal) {
+    // update lowpass filter cutoff frequencies
+    inline void updateLpCoeffs(const int lpStages, const float highcutVal) {
         float wc = 2.0f * M_PI * highcutVal;
         float k = compute_corrected_k(wc, sampleRate, lpStages);
         a = k;
         b = 1.f - k;
+    }
 
+    // update highpass filter cutoff frequencies
+    inline void updateHpCoeffs(const int hpStages, const float lowcutVal) {
         float correctedFc = lowcutVal / sqrtf((float)hpStages);
         float hwc = 2.0f * M_PI * correctedFc;
         float hk  = hwc / (hwc + sampleRate);
         ha = fmaxf(1e-6f, fminf(0.9999f, hk));
 
-        float hbwc = 2.0f * M_PI * fmaxf(16.0f,correctedFc * 0.5f);
+        float hbwc = 2.0f * M_PI * fmaxf(12.0f,correctedFc * 0.85f);
         float hbk  = hbwc / (hbwc + sampleRate);
         hb = fmaxf(1e-6f, fminf(0.9999f, hbk));
     }
@@ -196,6 +229,13 @@ private:
         return x * (27.0f + x2) / (27.0f + 9.0f * x2);
     }
 
+    // expf
+    inline float fast_exp(float x) {
+        x = fmaxf(-60.0f, fminf(60.0f, x));
+        float x2 = x * x;
+        return 1.0f + x + x2 * 0.5f + x * x2 * (1.0f/6.0f) + x2 * x2 * (1.0f/24.0f);
+    }
+
     // smooth gain compensation for drive
     inline float postSaturate(float x, const float driveVal) {
         return x / (driveVal + std::fabs(x));
@@ -209,7 +249,12 @@ private:
         return y;
     }
 
+    inline float offDist(float x, const float, const float) {
+        return x;
+    }
+
     inline float softDist(float x, const float driveVal, const float amountVal) {
+        if (fabsf(x) < 1e-20f) return 0.0f;
         x *= driveVal;
         x = tanh_fast(x * driveVal);
         x = 1e-15f + x - 1e-15f;
@@ -217,6 +262,7 @@ private:
     }
 
     inline float crunchDist(float x, const float driveVal, const float amountVal) {
+        if (fabsf(x) < 1e-20f) return 0.0f;
         x *= driveVal;
         float s = copysignf(1.f, x);
         x = s * log1p(mu * fabsf(x)) / log1p(mu);
@@ -226,7 +272,8 @@ private:
         return postSaturate(x, driveVal);
     }
 
-    inline float metalDist(float x, const float driveVal, const float amountVal) {
+    inline float rockDist(float x, const float driveVal, const float amountVal) {
+        if (fabsf(x) < 1e-20f) return 0.0f;
         x *= driveVal * 12.0f;
         x = std::clamp(x, -1.5f, 1.5f);
         x = x - (x * x * x) * 0.2f;
@@ -234,8 +281,7 @@ private:
         float s = copysignf(1.0f, x);
         float a = (s > 0.0f) ? 2.0f : 1.5f;
         float t = -fabsf(x) * a;
-        t = fmaxf(t, -50.0f);
-        x = s * (1.0f - expf(t));
+        x = s * (1.0f - fast_exp(t));
         x = 1e-15f + x - 1e-15f;
         return dc_block(x * amountVal);
     }
@@ -249,7 +295,7 @@ private:
             break;
             case (CRUNCH) : return crunchDist(x, driveVal, amountVal);
             break;
-            case (ROCK)  : return metalDist(x, driveVal, amountVal);
+            case (ROCK)  : return rockDist(x, driveVal, amountVal);
             break;
         }
         return x;

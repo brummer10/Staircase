@@ -154,12 +154,13 @@ static void draw_filter_overlay(cairo_t* cr, int width, int height, int state, i
 
         float db = 20.0f * log10f(mag + 1e-20f);
         float y  = db_to_y(db, db_min, db_max, height);
+        float x = freq_to_x(freq, f_min, f_max, width);
 
         if (!started_f) {
-            cairo_move_to(cr, i, y);
+            cairo_move_to(cr, x, y);
             started_f = 1;
         } else {
-            cairo_line_to(cr, i, y);
+            cairo_line_to(cr, x, y);
         }
     }
 
@@ -272,12 +273,12 @@ static void draw_window(void *w_, void* user_data) {
             continue;
 
         float x = freq_to_x(freq, f_min, f_max, width);
-        float db = mags[i] + display_tilt(freq);
+        float db = mags[i] ;//+ display_tilt(freq);
         float y = db_to_y(db, db_min, db_max, height);
 
         if (!started) {
             float x0 = freq_to_x(f_min, f_min, f_max, width);
-            float db0 = mags[1] + display_tilt(f_min);
+            float db0 = mags[1] ;//+ display_tilt(f_min);
             float y0 = db_to_y(db0, db_min, db_max, height);
             cairo_move_to(cr, x0, y0);
             started = 1;

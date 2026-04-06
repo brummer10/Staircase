@@ -16,6 +16,8 @@
 #include <lv2/midi/midi.h>
 #include <lv2/urid/urid.h>
 #include <lv2/patch/patch.h>
+#include "inline-display.h"
+#include <cairo/cairo.h>
 
 #include "Staircase.h"
 #include "ParallelThread.h"
@@ -53,9 +55,9 @@ namespace staircase {
 class Xstaircase
 {
 private:
-    LM_EII12 stair;
-    ParallelThread     xrworker;
     FFTAnalyzer        ana;
+    LM_EII12           stair;
+    ParallelThread     xrworker;
     
     const LV2_Atom_Sequence* control;
     LV2_Atom_Sequence* notify;
@@ -78,7 +80,6 @@ private:
     float ramp_up_step;
     float ramp_down_step;
     bool bypassed;
-
     // private functions
     inline void run_dsp_(uint32_t n_samples);
     inline void connect_(uint32_t port,void* data);
@@ -89,11 +90,29 @@ private:
     inline void deactivate_f();
     void analyse();
 public:
+    // inline display
+    float sampleRate;
+    float lowcut;
+    float highcut;
+    int hpslopes;
+    int lpslopes;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;
+    uint8_t* data;
+    cairo_surface_t* surface;
+    LV2_Inline_Display_Image_Surface img;
+    LV2_Inline_Display*  queue_draw = nullptr;
+    const float* getMagnitudes();
+    const int getBins();
+    static const LV2_Inline_Display_Image_Surface* render_inline(
+                LV2_Handle instance, uint32_t width, uint32_t height);
     // LV2 Descriptor
     static const LV2_Descriptor descriptor;
     // static wrapper to private functions
     static void deactivate(LV2_Handle instance);
     static void cleanup(LV2_Handle instance);
+    static const void* extension_data(const char* uri);
     static void run(LV2_Handle instance, uint32_t n_samples);
     static void activate(LV2_Handle instance);
     static void connect_port(LV2_Handle instance, uint32_t port, void* data);
@@ -119,6 +138,7 @@ Xstaircase::Xstaircase() :
 
 // destructor
 Xstaircase::~Xstaircase() {
+    cairo_surface_destroy(surface);
     ana.cleanup();
     xrworker.stop();
     delete[] abuffer;
@@ -128,6 +148,12 @@ Xstaircase::~Xstaircase() {
 
 void Xstaircase::init_dsp_(uint32_t rate)
 {
+    width = 1;
+    height = 1;
+    stride = 1;
+    data = nullptr;
+    surface = nullptr;
+    sampleRate = (float)rate;
     abuffer = new float[8192];
     memset(abuffer, 0, 8192 * sizeof(float));
     ana.init(2048, (float)rate);
@@ -216,6 +242,10 @@ void Xstaircase::run_dsp_(uint32_t n_samples)
     lv2_atom_forge_sequence_head(&forge, &notify_frame, 0);
     if (notify_capacity<n_samples) return;
 
+    lowcut = (*stair.lowcut);
+    highcut = (*stair.highcut);
+    hpslopes = (int)(*stair.hpSlope);
+    lpslopes = (int)(*stair.lpSlope);
 
     // do inplace processing on default
     if(output0 != input0)
@@ -289,6 +319,7 @@ void Xstaircase::run_dsp_(uint32_t n_samples)
         lv2_atom_forge_property_head(&this->forge, uris->atom_Vector,0);
         lv2_atom_forge_vector(&this->forge, sizeof(float), uris->atom_Float, ana.getBins(), (void*)ana.getMagnitudes());
         lv2_atom_forge_pop(&this->forge, &frame);
+        if (queue_draw) queue_draw->queue_draw (queue_draw->handle);
         ana.clearFlag();
     }
 }
@@ -299,25 +330,69 @@ void Xstaircase::connect_all__ports(uint32_t port, void* data)
     connect_(port,data); 
 }
 
+const float* Xstaircase::getMagnitudes() {
+    return ana.getMagnitudes();
+}
+
+
+const int Xstaircase::getBins() {
+    return ana.getBins();
+}
+
 ////////////////////// STATIC CLASS  FUNCTIONS  ////////////////////////
+
+#include "DrawInline.cc"
+
+const LV2_Inline_Display_Image_Surface* Xstaircase::render_inline(
+            LV2_Handle instance, uint32_t width, uint32_t height) {
+
+    Xstaircase* self = (Xstaircase*)instance;
+
+    if (!self->data || self->width != width || self->height != height * 0.5 || !self->surface) {
+        free(self->data);
+        self->width  = width;
+        self->height = height * 0.5;
+        self->stride = width * 4;
+        self->data = (uint8_t*)calloc(1, self->stride * self->height);
+        cairo_surface_destroy(self->surface);
+        self->surface = cairo_image_surface_create_for_data(
+            self->data, CAIRO_FORMAT_ARGB32, self->width, self->height, self->stride);
+    }
+
+    cairo_t* cr = cairo_create(self->surface);
+    draw_inline(self, cr);
+    cairo_destroy(cr);
+
+    self->img.data   = self->data;
+    self->img.width  = self->width;
+    self->img.height = self->height;
+    self->img.stride = self->stride;
+
+    return &self->img;
+}
 
 LV2_Handle 
 Xstaircase::instantiate(const LV2_Descriptor* descriptor,
                             double rate, const char* bundle_path,
                             const LV2_Feature* const* features)
 {
+    // init the plug-in class
+    Xstaircase *self = new Xstaircase();
+    if (!self) {
+        return NULL;
+    }
+
     LV2_URID_Map* map = NULL;
     for (int i = 0; features[i]; ++i) {
         if (!strcmp(features[i]->URI, LV2_URID__map)) {
             map = (LV2_URID_Map*)features[i]->data;
         }
+        if (!strcmp(features[i]->URI, LV2_INLINEDISPLAY__queue_draw)) {
+            self->queue_draw = (LV2_Inline_Display*) features[i]->data;
+        }
     }
     if (!map) {
-        return NULL;
-    }
-    // init the plug-in class
-    Xstaircase *self = new Xstaircase();
-    if (!self) {
+        delete self;
         return NULL;
     }
 
@@ -363,6 +438,16 @@ void Xstaircase::cleanup(LV2_Handle instance)
     delete self;
 }
 
+const void* Xstaircase::extension_data(const char* uri) {
+    if (!strcmp(uri, LV2_INLINEDISPLAY__interface)) {
+        static const LV2_Inline_Display_Interface iface = {
+            render_inline
+        };
+        return &iface;
+    }
+    return NULL;
+}
+
 const LV2_Descriptor Xstaircase::descriptor =
 {
     PLUGIN_URI ,
@@ -372,7 +457,7 @@ const LV2_Descriptor Xstaircase::descriptor =
     Xstaircase::run,
     Xstaircase::deactivate,
     Xstaircase::cleanup,
-    NULL
+    Xstaircase::extension_data
 };
 
 } // end namespace staircase

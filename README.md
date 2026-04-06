@@ -16,6 +16,7 @@ It is designed for efficient DSP performance and a clean, responsive UI.
 *  Real-time FFT spectrum display
 *  Low CPU usage, optimized for realtime processing
 *  Clean and minimal UI (libxputty / Cairo)
+*  Supports the LV2_Inline_Display extension
 
 ---
 
@@ -23,7 +24,7 @@ It is designed for efficient DSP performance and a clean, responsive UI.
 
 * **HP slope** – Controls low cut filter slope (6, 12, 24, 36 dB/OCT)
 * **LowCut** – Removes low frequencies before distortion
-* **Dist Mode** – Controls distortion mode (Soft, Crunch, Rock)
+* **Dist Mode** – Controls distortion mode (Off, Soft, Crunch, Rock)
 * **Drive** – Controls distortion intensity
 * **Amount** – Output level / wet amount
 * **LP slope** – Controls high cut filter slope (6, 12, 24, 36 dB/OCT)

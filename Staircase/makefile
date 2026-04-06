@@ -32,7 +32,7 @@ ifeq ($(TARGET), Linux)
 
 	LDFLAGS += -fvisibility=hidden -shared -lm -fPIC -pthread -lpthread\
 	-Wl,-z,noexecstack -Wl,--no-undefined -Wl,--gc-sections \
-	`pkg-config --cflags --libs fftw3f` 
+	`pkg-config --cflags --libs cairo fftw3f` 
 
 	CXXFLAGS += -std=c++17 -D_FORTIFY_SOURCE=3 -fPIC -DPIC -O2 -Wall -funroll-loops \
 	-fomit-frame-pointer -fstrength-reduce -fstack-protector -fvisibility=hidden \
@@ -50,7 +50,7 @@ else ifeq ($(TARGET), Windows)
 	-fdata-sections -Wl,--gc-sections -Wl,--exclude-libs,ALL $(SSE_CFLAGS)
 
 	LDFLAGS += -I. -shared -lm $(PAWPAW_LFLAGS) \
-	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs fftw3f`
+	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs cairo fftw3f`
 
 	GUI_LDFLAGS += -I$(HEADER_DIR) -static-libgcc -static-libstdc++ \
 	`$(PKGCONFIG) $(PKGCONFIG_FLAGS) --cflags --libs cairo` \
