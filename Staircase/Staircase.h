@@ -203,7 +203,8 @@ private:
         float hk  = hwc / (hwc + sampleRate);
         ha = fmaxf(1e-6f, fminf(0.9999f, hk));
 
-        float hbwc = 2.0f * M_PI * fmaxf(12.0f,lowcutVal * 0.75f);
+        float correctedFcb = fmaxf(12.0f, lowcutVal / (sqrtf((float)hpStages)* 0.65f));
+        float hbwc = 2.0f * M_PI * correctedFcb;
         float hbk  = hbwc / (hbwc + sampleRate);
         hb = fmaxf(1e-6f, fminf(0.9999f, hbk));
     }
