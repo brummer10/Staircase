@@ -29,7 +29,7 @@
 
 #include <stdint.h>
 
-#include "lv2.h"
+#include <lv2/core/lv2.h>
 
 #define LV2_INLINEDISPLAY_URI "http://harrisonconsoles.com/lv2/inlinedisplay"
 #define LV2_INLINEDISPLAY_PREFIX LV2_INLINEDISPLAY_URI "#"
